@@ -1,3 +1,14 @@
+import io
+from PIL import Image
+
+
+def generate_test_image() -> bytes:
+    img = Image.new("RGB", (100, 150), color="green")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def test_library_crud(client):
     # 1. Create a library item
     create_payload = {
@@ -20,6 +31,7 @@ def test_library_crud(client):
     get_res = client.get(f"/api/v1/library/{item_id}")
     assert get_res.status_code == 200
     assert get_res.json()["creator"] == "Martin Kleppmann"
+    assert "sources" in get_res.json()
 
     # 3. List library items
     list_res = client.get("/api/v1/library?content_type=book")
@@ -46,3 +58,34 @@ def test_library_crud(client):
     # 6. Verify deleted
     get_after = client.get(f"/api/v1/library/{item_id}")
     assert get_after.status_code == 404
+
+
+def test_library_item_linked_to_source_asset(client):
+    # 1. Upload screenshot
+    img_bytes = generate_test_image()
+    files = [("files", ("book_cover.png", io.BytesIO(img_bytes), "image/png"))]
+    upload_res = client.post("/api/v1/assets/upload", files=files)
+    assert upload_res.status_code == 202
+    asset_id = upload_res.json()["assets"][0]["asset_id"]
+
+    # 2. Create library item linked to this asset
+    create_res = client.post("/api/v1/library", json={
+        "title": "Clean Code",
+        "creator": "Robert C. Martin",
+        "content_type": "book",
+        "consumption_status": "completed",
+        "source_asset_id": asset_id
+    })
+    assert create_res.status_code == 201
+    item_id = create_res.json()["id"]
+
+    # 3. Fetch item details and verify linked source with signed URL
+    detail_res = client.get(f"/api/v1/library/{item_id}")
+    assert detail_res.status_code == 200
+    details = detail_res.json()
+    assert len(details["sources"]) == 1
+    source = details["sources"][0]
+    assert source["id"] == asset_id
+    assert source["file_name"] == "book_cover.png"
+    assert "signed_url" in source
+    assert source["image_width"] == 100

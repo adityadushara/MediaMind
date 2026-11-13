@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from PIL import Image
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.security import get_current_user, AuthenticatedUser
 from app.db.session import get_db
 from app.models.entities import SourceAsset, ProcessingJob
@@ -80,30 +81,39 @@ async def upload_assets(
         # Upload original file to private storage
         stored_path = await storage.upload_file(storage_path, content, mime_type)
 
-        # Create source asset record
-        asset = SourceAsset(
-            id=asset_id,
-            user_id=current_user.id,
-            file_path=stored_path,
-            file_name=upload_file.filename or f"screenshot{ext}",
-            file_size_bytes=len(content),
-            mime_type=mime_type,
-            sha256_hash=sha256_hash,
-            image_width=width,
-            image_height=height
-        )
-        db.add(asset)
+        try:
+            # Create source asset record
+            asset = SourceAsset(
+                id=asset_id,
+                user_id=current_user.id,
+                file_path=stored_path,
+                file_name=upload_file.filename or f"screenshot{ext}",
+                file_size_bytes=len(content),
+                mime_type=mime_type,
+                sha256_hash=sha256_hash,
+                image_width=width,
+                image_height=height
+            )
+            db.add(asset)
 
-        # Create processing job record
-        job_id = str(uuid.uuid4())
-        job = ProcessingJob(
-            id=job_id,
-            user_id=current_user.id,
-            source_asset_id=asset_id,
-            status="queued"
-        )
-        db.add(job)
-        db.commit()
+            # Create processing job record
+            job_id = str(uuid.uuid4())
+            job = ProcessingJob(
+                id=job_id,
+                user_id=current_user.id,
+                source_asset_id=asset_id,
+                status="queued"
+            )
+            db.add(job)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            # Clean up the file from storage if DB persistence failed
+            await storage.delete_file(stored_path)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to persist asset record: {str(e)}"
+            )
 
         results.append(AssetUploadResponse(
             asset_id=asset_id,
@@ -160,11 +170,23 @@ async def serve_local_media(
     file_path: str,
     current_user: AuthenticatedUser = Depends(get_current_user)
 ):
-    """Local development only endpoint to serve stored media files."""
+    """Local development only endpoint to serve stored media files with strict user isolation."""
+    if settings.ENVIRONMENT != "development":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Endpoint not available in production")
+
+    # Enforce user ownership of the file path
+    clean_path = file_path.lstrip("/\\").replace("\\", "/")
+    expected_prefix = f"screenshots/{current_user.id}/"
+    if not clean_path.startswith(expected_prefix):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: cannot access assets belonging to another user"
+        )
+
     storage = get_storage_adapter()
     try:
-        data = await storage.download_file(file_path)
-        mime = "image/png" if file_path.endswith(".png") else "image/jpeg"
+        data = await storage.download_file(clean_path)
+        mime = "image/png" if clean_path.endswith(".png") else "image/jpeg"
         return Response(content=data, media_type=mime)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="File not found")
+    except (FileNotFoundError, PermissionError):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")

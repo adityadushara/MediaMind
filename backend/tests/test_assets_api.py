@@ -1,5 +1,6 @@
 import io
 from PIL import Image
+from app.core.config import settings
 
 
 def generate_test_image() -> bytes:
@@ -43,3 +44,33 @@ def test_asset_upload_and_job_creation(client):
     job_data = job_res.json()
     assert job_data["status"] == "queued"
     assert job_data["source_asset_id"] == asset_id
+
+
+def test_serve_local_media_isolation(client):
+    # Attempting to access another user's file path directly should return 403 Forbidden
+    other_user_path = "screenshots/other-user-uuid-9999/test.png"
+    res = client.get(f"/api/v1/assets/media/{other_user_path}")
+    assert res.status_code == 403
+    data = res.json()
+    assert "error" in data or "detail" in data
+
+
+def test_serve_local_media_production_disabled(client):
+    original_env = settings.ENVIRONMENT
+    settings.ENVIRONMENT = "production"
+    try:
+        # Without credentials in production, auth guard immediately rejects with 401
+        unauth_res = client.get("/api/v1/assets/media/screenshots/any-user/test.png")
+        assert unauth_res.status_code == 401
+
+        # Even if an authenticated user bypass is somehow present, the endpoint itself returns 404
+        from app.core.security import get_current_user, AuthenticatedUser
+        from app.main import app
+        app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser("any-user")
+        try:
+            auth_res = client.get("/api/v1/assets/media/screenshots/any-user/test.png")
+            assert auth_res.status_code == 404
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+    finally:
+        settings.ENVIRONMENT = original_env

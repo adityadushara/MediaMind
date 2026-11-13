@@ -41,6 +41,24 @@ export interface LibraryItem {
   updated_at: string;
 }
 
+export interface LinkedSourceAsset {
+  id: string;
+  file_name: string;
+  file_path: string;
+  file_size_bytes: number;
+  mime_type: string;
+  sha256_hash: string;
+  image_width: number | null;
+  image_height: number | null;
+  signed_url: string | null;
+  crop_coordinates: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface LibraryItemDetail extends LibraryItem {
+  sources: LinkedSourceAsset[];
+}
+
 export interface LibraryItemListResponse {
   total: number;
   items: LibraryItem[];

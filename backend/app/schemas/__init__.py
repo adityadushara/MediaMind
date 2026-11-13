@@ -8,6 +8,8 @@ from app.schemas.common import (
     LibraryItemCreate,
     LibraryItemUpdate,
     LibraryItemResponse,
+    LibraryItemDetailResponse,
+    LinkedSourceAsset,
     LibraryItemListResponse,
     IdentificationCandidateResponse,
 )
@@ -22,6 +24,8 @@ __all__ = [
     "LibraryItemCreate",
     "LibraryItemUpdate",
     "LibraryItemResponse",
+    "LibraryItemDetailResponse",
+    "LinkedSourceAsset",
     "LibraryItemListResponse",
     "IdentificationCandidateResponse",
 ]

@@ -10,10 +10,13 @@ from app.schemas.common import (
     LibraryItemCreate,
     LibraryItemUpdate,
     LibraryItemResponse,
+    LibraryItemDetailResponse,
+    LinkedSourceAsset,
     LibraryItemListResponse,
     ContentType,
     ConsumptionStatus,
 )
+from app.adapters.storage import get_storage_adapter
 
 router = APIRouter(prefix="/library", tags=["Library Items"])
 
@@ -95,8 +98,8 @@ def create_library_item(
     return item
 
 
-@router.get("/{item_id}", response_model=LibraryItemResponse)
-def get_library_item(
+@router.get("/{item_id}", response_model=LibraryItemDetailResponse)
+async def get_library_item(
     item_id: str,
     current_user: AuthenticatedUser = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -107,7 +110,49 @@ def get_library_item(
     ).first()
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Library item not found")
-    return item
+
+    storage = get_storage_adapter()
+    linked_sources: list[LinkedSourceAsset] = []
+
+    for item_source in item.sources:
+        asset = item_source.source_asset
+        if asset:
+            signed_url = await storage.get_signed_url(asset.file_path, expires_in_seconds=900)
+            linked_sources.append(
+                LinkedSourceAsset(
+                    id=asset.id,
+                    file_name=asset.file_name,
+                    file_path=asset.file_path,
+                    file_size_bytes=asset.file_size_bytes,
+                    mime_type=asset.mime_type,
+                    sha256_hash=asset.sha256_hash,
+                    image_width=asset.image_width,
+                    image_height=asset.image_height,
+                    signed_url=signed_url,
+                    crop_coordinates=item_source.crop_coordinates,
+                    created_at=asset.created_at,
+                )
+            )
+
+    return LibraryItemDetailResponse(
+        id=item.id,
+        user_id=item.user_id,
+        title=item.title,
+        creator=item.creator,
+        content_type=item.content_type,
+        consumption_status=item.consumption_status,
+        release_year=item.release_year,
+        overview=item.overview,
+        cover_image_url=item.cover_image_url,
+        external_provider=item.external_provider,
+        external_id=item.external_id,
+        provider_metadata=item.provider_metadata,
+        user_rating=float(item.user_rating) if item.user_rating is not None else None,
+        verification_status=item.verification_status,
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+        sources=linked_sources,
+    )
 
 
 @router.patch("/{item_id}", response_model=LibraryItemResponse)

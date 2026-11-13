@@ -292,6 +292,23 @@ CREATE POLICY "Users can access own item sources"
             WHERE library_items.id = item_sources.library_item_id 
             AND library_items.user_id = auth.uid()
         )
+        AND EXISTS (
+            SELECT 1 FROM source_assets
+            WHERE source_assets.id = item_sources.source_asset_id
+            AND source_assets.user_id = auth.uid()
+        )
+    )
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM library_items 
+            WHERE library_items.id = item_sources.library_item_id 
+            AND library_items.user_id = auth.uid()
+        )
+        AND EXISTS (
+            SELECT 1 FROM source_assets
+            WHERE source_assets.id = item_sources.source_asset_id
+            AND source_assets.user_id = auth.uid()
+        )
     );
 
 CREATE POLICY "Users can manage own identification candidates"

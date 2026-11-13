@@ -27,3 +27,20 @@ async def test_local_storage_adapter(tmp_path):
     # Confirm deleted
     with pytest.raises(FileNotFoundError):
         await adapter.download_file(dest_path)
+
+
+@pytest.mark.asyncio
+async def test_storage_path_traversal_prevention(tmp_path):
+    adapter = LocalStorageAdapter(base_path=str(tmp_path))
+
+    # Attempting to upload outside base path
+    with pytest.raises(PermissionError, match="Path traversal detected"):
+        await adapter.upload_file("../escape.txt", b"malicious", "text/plain")
+
+    # Attempting to download outside base path
+    with pytest.raises(PermissionError, match="Path traversal detected"):
+        await adapter.download_file("../../etc/passwd")
+
+    # Attempting to delete outside base path
+    with pytest.raises(PermissionError, match="Path traversal detected"):
+        await adapter.delete_file("../outside.txt")

@@ -114,6 +114,24 @@ class LibraryItemResponse(LibraryItemBase):
     updated_at: datetime
 
 
+class LinkedSourceAsset(BaseModel):
+    id: str
+    file_name: str
+    file_path: str
+    file_size_bytes: int
+    mime_type: str
+    sha256_hash: str
+    image_width: Optional[int] = None
+    image_height: Optional[int] = None
+    signed_url: Optional[str] = None
+    crop_coordinates: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+
+class LibraryItemDetailResponse(LibraryItemResponse):
+    sources: List[LinkedSourceAsset] = Field(default_factory=list)
+
+
 class LibraryItemListResponse(BaseModel):
     total: int
     items: List[LibraryItemResponse]
