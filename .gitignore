@@ -39,6 +39,11 @@ node_modules/
 out/
 .turbo/
 
+# Storage data
+storage_data/
+*.sqlite
+*.db
+
 # Logs
 logs/
 *.log
