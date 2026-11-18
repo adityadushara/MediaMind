@@ -11,6 +11,8 @@ if str(backend_dir) not in sys.path:
 from app.core.config import settings
 
 DB_URL = settings.DATABASE_URL
+if DB_URL.startswith("postgres://"):
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 
 MIGRATION_FILES = [
     "migrations/001_initial_schema.sql",
@@ -19,6 +21,8 @@ MIGRATION_FILES = [
     "migrations/004_worker_lease_token.sql",
     "migrations/005_add_subcategory_and_direct_url.sql",
     "migrations/006_m4_metadata_and_deduplication.sql",
+    "migrations/007_add_article_and_newsletter_types.sql",
+    "migrations/008_auto_confirm_users.sql",
 ]
 
 def apply_migrations():

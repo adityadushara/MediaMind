@@ -39,6 +39,7 @@ export interface LibraryItem {
   release_year: number | null;
   overview: string | null;
   cover_image_url: string | null;
+  screenshot_url?: string | null;
   original_title?: string | null;
   isbn?: string | null;
   genre?: string | null;
@@ -52,7 +53,7 @@ export interface LibraryItem {
   external_id: string | null;
   provider_metadata: Record<string, unknown>;
   user_rating: number | null;
-  verification_status: "verified" | "manual_entry" | "auto_accepted";
+  verification_status: "verified" | "manual_entry" | "auto_accepted" | "needs_review" | "unverified" | string;
   created_at: string;
   updated_at: string;
 }

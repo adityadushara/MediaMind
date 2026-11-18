@@ -370,4 +370,36 @@ ALTER TABLE library_items ADD CONSTRAINT library_items_content_type_check
     ));
 ```
 
+---
+
+## 10. Migration 008: Auto-Confirm Users (`008_auto_confirm_users.sql`)
+Disables mandatory email verification at the database level by auto-confirming any existing unconfirmed users and registering a `BEFORE INSERT` trigger on `auth.users`:
+```sql
+-- 1. Auto-confirm existing unconfirmed users
+UPDATE auth.users
+SET email_confirmed_at = COALESCE(email_confirmed_at, now())
+WHERE email_confirmed_at IS NULL;
+
+-- 2. Trigger function to auto-confirm new users upon creation
+CREATE OR REPLACE FUNCTION public.auto_confirm_new_user()
+RETURNS trigger AS $$
+BEGIN
+  IF NEW.email_confirmed_at IS NULL THEN
+    NEW.email_confirmed_at := now();
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 3. Trigger on auth.users before insert
+DROP TRIGGER IF EXISTS on_auth_user_auto_confirm ON auth.users;
+CREATE TRIGGER on_auth_user_auto_confirm
+  BEFORE INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION public.auto_confirm_new_user();
+```
+> [!NOTE]
+> To permanently remove email confirmation from the hosted Supabase Auth service, navigate to **Supabase Dashboard > Authentication > Providers > Email** and turn OFF **Confirm email**.
+
+
 

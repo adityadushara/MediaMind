@@ -143,7 +143,7 @@ export function QuickUploadModal({ isOpen, onClose, onUploadSuccess }: QuickUplo
         {successCount !== null && (
           <div className="flex items-center gap-2 p-3 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs font-bold">
             <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
-            <span>Successfully enqueued {successCount} screenshot! AI is reading it now.</span>
+            <span>Added {successCount} screenshot{successCount > 1 ? "s" : ""} directly to your Library! AI is analyzing now.</span>
           </div>
         )}
 

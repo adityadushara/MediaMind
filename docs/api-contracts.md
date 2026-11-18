@@ -204,10 +204,17 @@
     ```
 
 - `GET /api/v1/library/{id}`
-  - Detailed view including linked source assets (with temporary signed URLs), notes, and progress.
+  - Detailed view including linked source assets (with temporary signed URLs), notes, progress, and `screenshot_url`.
 
 - `PATCH /api/v1/library/{id}`
-  - Updates consumption status, rating, or metadata.
+  - Updates consumption status, user rating, verification status, or metadata.
+
+- `POST /api/v1/library/{id}/verify`
+  - Confirms and verifies a pending library item (`verification_status = "verified"`), keeping it permanently in the library and resolving any linked AI extraction candidates.
+
+- `POST /api/v1/library/verify-all`
+  - 1-click batch verification for all items currently marked `needs_review`.
+  - Response `200 OK`: `{"verified_count": 3}`
 
 - `DELETE /api/v1/library/{id}`
   - Deletes library item. Notice: does NOT delete underlying `source_assets`.

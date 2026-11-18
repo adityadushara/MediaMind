@@ -52,6 +52,7 @@ class AssetUploadResponse(BaseModel):
     job_id: str
     status: str
     is_duplicate: bool = False
+    library_item_id: Optional[str] = None
 
 
 class BatchUploadResponse(BaseModel):
@@ -182,6 +183,7 @@ class LibraryItemUpdate(BaseModel):
     total_seasons: Optional[int] = None
     total_episodes: Optional[int] = None
     user_rating: Optional[float] = Field(None, ge=0.0, le=10.0)
+    verification_status: Optional[str] = None
     provider_metadata: Optional[Dict[str, Any]] = None
 
 
@@ -191,6 +193,7 @@ class LibraryItemResponse(LibraryItemBase):
     id: str
     user_id: str
     verification_status: str
+    screenshot_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

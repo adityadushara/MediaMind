@@ -1,0 +1,31 @@
+services:
+  backend:
+    build:
+      context: ./BE
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=development
+      - DATABASE_URL=sqlite:///./mediamind_dev.db
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_RUNTIME_MODEL=${GEMINI_RUNTIME_MODEL:-gemini-2.5-flash}
+      - BACKEND_CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - backend_storage:/app/storage_data
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./FE
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  backend_storage:

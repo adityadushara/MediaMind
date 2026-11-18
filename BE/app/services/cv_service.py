@@ -5,6 +5,12 @@ import numpy as np
 from PIL import Image, ImageOps
 import cv2
 
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except Exception:
+    pass
+
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

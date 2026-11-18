@@ -100,16 +100,19 @@ def main():
         description="MediaMind Backend Runner",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    default_host = os.environ.get("HOST", "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1")
+    default_port = int(os.environ.get("PORT", 8000))
+
     parser.add_argument(
         "--host",
         type=str,
-        default="127.0.0.1",
+        default=default_host,
         help="Host address for FastAPI server",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=8000,
+        default=default_port,
         help="Port for FastAPI server",
     )
     parser.add_argument(

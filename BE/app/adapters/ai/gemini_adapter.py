@@ -215,9 +215,16 @@ class GeminiAdapter:
             except APIError as api_err:
                 last_exception = api_err
                 error_code = getattr(api_err, "code", None)
+                err_str = str(api_err).lower()
+                is_daily_quota_exhausted = (
+                    "per day" in err_str or
+                    "free_tier_requests" in err_str or
+                    "daily limit" in err_str
+                )
 
-                # Transient errors: 429 Rate Limit, 503 Unavailable -> Retry with exponential backoff
-                if error_code in (429, 503) and attempt < max_retries:
+                # Transient errors: 429 Rate Limit (short-term RPM spike), 503 Unavailable -> Retry with exponential backoff
+                # Do NOT retry immediately if daily quota (20 requests/day) has been completely exhausted
+                if error_code in (429, 503) and attempt < max_retries and not is_daily_quota_exhausted:
                     sleep_time = (2 ** attempt) + random.uniform(0.1, 0.5)
                     logger.warning(f"Gemini transient error ({error_code}) on attempt {attempt + 1}. Retrying in {sleep_time:.2f}s...")
                     time.sleep(sleep_time)
@@ -226,6 +233,14 @@ class GeminiAdapter:
                 # Non-transient errors or exhausted retries
                 duration_ms = int((time.time() - start_time) * 1000)
                 category = "rate_limit" if error_code == 429 else ("service_unavailable" if error_code == 503 else "api_error")
+                error_msg = str(api_err)
+                if is_daily_quota_exhausted:
+                    error_msg = (
+                        "Gemini API Free Tier daily limit exceeded (20 requests/day). "
+                        "To fix: switch GEMINI_RUNTIME_MODEL in BE/.env to 'gemini-2.0-flash' (higher free quota) "
+                        "or enable Pay-As-You-Go in Google AI Studio."
+                    )
+
                 return GeminiExtractionResult(
                     candidates=[],
                     prompt_identifier=prompt_id,
@@ -233,7 +248,7 @@ class GeminiAdapter:
                     ai_model_name=self.model_name,
                     duration_ms=duration_ms,
                     error_category=category,
-                    error_message=str(api_err),
+                    error_message=error_msg,
                 )
 
             except Exception as e:

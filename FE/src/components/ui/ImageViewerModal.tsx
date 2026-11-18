@@ -21,11 +21,16 @@ export function ImageViewerModal({
 }: ImageViewerModalProps) {
   const [zoom, setZoom] = useState(1);
   const [hasError, setHasError] = useState(false);
+  const [prevImageUrl, setPrevImageUrl] = useState(imageUrl);
+
+  if (imageUrl !== prevImageUrl) {
+    setPrevImageUrl(imageUrl);
+    setZoom(1);
+    setHasError(false);
+  }
 
   useEffect(() => {
     if (isOpen) {
-      setZoom(1);
-      setHasError(false);
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "auto";
@@ -33,7 +38,7 @@ export function ImageViewerModal({
     return () => {
       document.body.style.overflow = "auto";
     };
-  }, [isOpen, imageUrl]);
+  }, [isOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -144,7 +149,14 @@ export function ImageViewerModal({
               <p className="text-xs text-stone-500">
                 The requested asset file might not exist in local storage or the backend is offline.
               </p>
-              <div className="pt-2">
+              <div className="pt-2 flex flex-col items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHasError(false)}
+                  className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                >
+                  Retry Loading
+                </button>
                 <a
                   href={resolvedSrc}
                   target="_blank"
@@ -164,6 +176,7 @@ export function ImageViewerModal({
               <img
                 src={resolvedSrc}
                 alt={altText}
+                referrerPolicy="no-referrer"
                 onError={() => setHasError(true)}
                 className="max-h-[70vh] w-auto max-w-full object-contain rounded-xl shadow-md border border-stone-200/60 bg-white"
               />

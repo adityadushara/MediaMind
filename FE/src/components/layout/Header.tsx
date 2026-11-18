@@ -1,7 +1,8 @@
 "use client";
 
-import React from "react";
-import { Search, Plus, Bell, Sparkles } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { Search, Sparkles, LogIn, LogOut } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 interface HeaderProps {
   onOpenUpload?: () => void;
@@ -11,6 +12,25 @@ interface HeaderProps {
 }
 
 export function Header({ onOpenUpload, onOpenAskAI, searchQuery, onSearchChange }: HeaderProps) {
+  const { user, signOut, openAuthModal } = useAuth();
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close user dropdown when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
+        setIsUserMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const displayName =
+    user?.user_metadata?.display_name || user?.email?.split("@")[0] || "User";
+  const userInitials = displayName.slice(0, 2).toUpperCase();
+
   return (
     <header className="h-16 border-b border-stone-200 bg-white/90 backdrop-blur-md px-8 flex items-center justify-between sticky top-0 z-20">
       {/* Search Input & Ask AI */}
@@ -29,7 +49,7 @@ export function Header({ onOpenUpload, onOpenAskAI, searchQuery, onSearchChange 
         {onOpenAskAI && (
           <button
             type="button"
-            onClick={onOpenAskAI}
+            onClick={user ? onOpenAskAI : () => openAuthModal("signin")}
             className="h-10 flex items-center gap-1.5 px-3.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300/80 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
             title="Ask AI anything about your library"
           >
@@ -39,22 +59,59 @@ export function Header({ onOpenUpload, onOpenAskAI, searchQuery, onSearchChange 
         )}
       </div>
 
-      {/* Action Buttons */}
+      {/* Action Buttons & Auth */}
       <div className="flex items-center gap-3">
-        <button
-          title="Notifications"
-          className="h-10 w-10 rounded-xl border border-stone-200 bg-stone-50 flex items-center justify-center text-stone-600 hover:text-stone-900 hover:bg-stone-100 transition-colors cursor-pointer"
-        >
-          <Bell className="h-4 w-4" />
-        </button>
+        {/* User Auth Section */}
+        {user ? (
+          <div className="relative" ref={userMenuRef}>
+            <button
+              type="button"
+              onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+              className="h-10 flex items-center gap-2 pl-2 pr-3 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-800 transition-colors cursor-pointer shadow-2xs"
+              title={user.email}
+            >
+              <div className="h-6 w-6 rounded-lg bg-amber-600 text-white text-[10px] font-bold flex items-center justify-center shadow-xs">
+                {userInitials}
+              </div>
+              <span className="text-xs font-semibold max-w-[100px] truncate hidden sm:inline">
+                {displayName}
+              </span>
+            </button>
 
-        <button
-          onClick={onOpenUpload}
-          className="h-10 flex items-center gap-2 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-all shadow-sm shadow-amber-600/20 active:scale-95 cursor-pointer"
-        >
-          <Plus className="h-4 w-4 stroke-[2.5]" />
-          <span>Add Screenshot</span>
-        </button>
+            {/* Dropdown Menu */}
+            {isUserMenuOpen && (
+              <div className="absolute right-0 mt-2 w-56 rounded-2xl bg-white border border-stone-200 shadow-xl py-2 z-30 animate-in fade-in duration-100">
+                <div className="px-4 py-2 border-b border-stone-100">
+                  <p className="text-xs font-bold text-stone-900 truncate">{displayName}</p>
+                  <p className="text-[11px] text-stone-500 truncate">{user.email}</p>
+                </div>
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setIsUserMenuOpen(false);
+                      await signOut();
+                    }}
+                    className="w-full px-4 py-2 flex items-center gap-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition-colors text-left cursor-pointer"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => openAuthModal("signin")}
+            className="h-10 flex items-center gap-2 px-3.5 rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-800 text-xs font-bold transition-all shadow-2xs cursor-pointer active:scale-95"
+          >
+            <LogIn className="h-3.5 w-3.5 text-amber-600" />
+            <span>Sign In</span>
+          </button>
+        )}
       </div>
     </header>
   );

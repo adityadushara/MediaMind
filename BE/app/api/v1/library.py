@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -5,7 +6,7 @@ from sqlalchemy import or_, desc, asc
 
 from app.core.security import get_current_user, AuthenticatedUser
 from app.db.session import get_db
-from app.models.entities import LibraryItem, ItemSource, SourceAsset
+from app.models.entities import LibraryItem, ItemSource, SourceAsset, IdentificationCandidate, ProcessingJob
 from app.schemas.common import (
     LibraryItemCreate,
     LibraryItemUpdate,
@@ -22,11 +23,27 @@ from app.services.link_generator import generate_direct_link, resolve_subcategor
 router = APIRouter(prefix="/library", tags=["Library Items"])
 
 
+def populate_item_media_urls(item: LibraryItem) -> Optional[str]:
+    screenshot_url = None
+    if item.sources:
+        src = item.sources[0]
+        if src.source_asset:
+            screenshot_url = f"/api/v1/assets/media/{src.source_asset.file_path.lstrip('/')}"
+            if not item.cover_image_url:
+                if src.source_asset.derivatives:
+                    item.cover_image_url = f"/api/v1/assets/media/{src.source_asset.derivatives[0].storage_path.lstrip('/')}"
+                else:
+                    item.cover_image_url = screenshot_url
+    setattr(item, "screenshot_url", screenshot_url)
+    return screenshot_url
+
+
 @router.get("", response_model=LibraryItemListResponse)
 def list_library_items(
     content_type: Optional[ContentType] = None,
     subcategory: Optional[str] = None,
     consumption_status: Optional[ConsumptionStatus] = None,
+    verification_status: Optional[str] = Query(None, description="Filter by verification status, e.g. 'needs_review', 'verified'"),
     search: Optional[str] = None,
     sort_by: str = Query("created_at", pattern="^(created_at|updated_at|title|user_rating)$"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -43,6 +60,8 @@ def list_library_items(
         query = query.filter(LibraryItem.subcategory == subcategory)
     if consumption_status:
         query = query.filter(LibraryItem.consumption_status == consumption_status)
+    if verification_status:
+        query = query.filter(LibraryItem.verification_status == verification_status)
     if search:
         pattern = f"%{search}%"
         query = query.filter(
@@ -57,6 +76,9 @@ def list_library_items(
     sort_col = getattr(LibraryItem, sort_by)
     query = query.order_by(desc(sort_col) if order == "desc" else asc(sort_col))
     items = query.offset(offset).limit(limit).all()
+
+    for item in items:
+        populate_item_media_urls(item)
 
     return LibraryItemListResponse(total=total, items=items)
 
@@ -172,6 +194,8 @@ async def get_library_item(
                 )
             )
 
+    screenshot_url = populate_item_media_urls(item)
+
     return LibraryItemDetailResponse(
         id=item.id,
         user_id=item.user_id,
@@ -189,6 +213,7 @@ async def get_library_item(
         provider_metadata=item.provider_metadata,
         user_rating=float(item.user_rating) if item.user_rating is not None else None,
         verification_status=item.verification_status,
+        screenshot_url=screenshot_url,
         created_at=item.created_at,
         updated_at=item.updated_at,
         sources=linked_sources,
@@ -215,7 +240,78 @@ def update_library_item(
 
     db.commit()
     db.refresh(item)
+    populate_item_media_urls(item)
     return item
+
+
+@router.post("/{item_id}/verify", response_model=LibraryItemResponse)
+def verify_library_item(
+    item_id: str,
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Marks a library item as verified/kept by the user and resolves linked candidates."""
+    item = db.query(LibraryItem).filter(
+        LibraryItem.id == item_id,
+        LibraryItem.user_id == current_user.id
+    ).first()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Library item not found")
+
+    item.verification_status = "verified"
+
+    # Also resolve any linked candidates
+    now = datetime.now(timezone.utc)
+    candidates = db.query(IdentificationCandidate).filter(
+        IdentificationCandidate.resolved_library_item_id == item_id,
+        IdentificationCandidate.user_id == current_user.id,
+    ).all()
+    for cand in candidates:
+        cand.review_status = "accepted"
+        cand.resolution_status = "resolved"
+        cand.resolved_at = now
+        if cand.job_id:
+            parent_job = db.query(ProcessingJob).filter(ProcessingJob.id == cand.job_id).first()
+            if parent_job and parent_job.status == "needs_review":
+                parent_job.status = "identified"
+
+    db.commit()
+    db.refresh(item)
+    populate_item_media_urls(item)
+    return item
+
+
+@router.post("/verify-all", status_code=status.HTTP_200_OK)
+def verify_all_library_items(
+    current_user: AuthenticatedUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Marks all 'needs_review' library items as verified for the current user."""
+    items = db.query(LibraryItem).filter(
+        LibraryItem.user_id == current_user.id,
+        LibraryItem.verification_status == "needs_review"
+    ).all()
+
+    now = datetime.now(timezone.utc)
+    count = 0
+    for item in items:
+        item.verification_status = "verified"
+        count += 1
+        candidates = db.query(IdentificationCandidate).filter(
+            IdentificationCandidate.resolved_library_item_id == item.id,
+            IdentificationCandidate.user_id == current_user.id,
+        ).all()
+        for cand in candidates:
+            cand.review_status = "accepted"
+            cand.resolution_status = "resolved"
+            cand.resolved_at = now
+            if cand.job_id:
+                parent_job = db.query(ProcessingJob).filter(ProcessingJob.id == cand.job_id).first()
+                if parent_job and parent_job.status == "needs_review":
+                    parent_job.status = "identified"
+
+    db.commit()
+    return {"verified_count": count}
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)

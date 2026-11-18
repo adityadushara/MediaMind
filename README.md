@@ -129,18 +129,22 @@ Visit:
 
 ### 1. Database & Storage (Supabase)
 1. Create a Supabase project at [supabase.com](https://supabase.com).
-2. Execute SQL migrations in order from `migrations/001_initial_schema.sql` through `migrations/007_add_article_and_newsletter_types.sql`.
+2. Execute SQL migrations in order from `migrations/001_initial_schema.sql` through `migrations/008_auto_confirm_users.sql`.
 3. Create a private storage bucket named `screenshots`.
+4. **Email Confirmation**: In Supabase Dashboard, navigate to **Authentication > Providers > Email** and turn OFF **Confirm email** so users can sign up and directly access their library without email confirmation.
 
-### 2. Backend API & Worker (Render / Railway / Fly.io)
-1. Deploy `BE/` with `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, and `GEMINI_API_KEY`.
-2. Start command for API: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
-3. Start command for background worker: `python -m app.worker.runner` (or run unified via `python run.py`).
+### 2. Backend API & Worker (Render / Railway / Fly.io / Docker)
+- **Using Docker**: Deploy with the production multi-stage `BE/Dockerfile` which automatically launches both FastAPI and the worker runner.
+- **Using Native Python / Procfile**: Deploy using `BE/Procfile`:
+  - Web: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+  - Worker: `python -m app.worker.runner`
+  - Or unified single container: `python run.py --no-reload` (auto-detects cloud `$PORT` and `$HOST`).
+- **Required Env**: `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `BACKEND_CORS_ORIGINS`.
 
-### 3. Frontend (Vercel)
-1. Connect repository root and configure root directory as `FE`.
-2. Add environment variable: `NEXT_PUBLIC_API_URL=https://your-backend-domain.com`.
-3. Deploy with default Next.js build command.
+### 3. Frontend (Vercel / Docker)
+1. **Vercel**: Connect repository, set root directory to `FE`.
+2. **Docker Compose**: Run `docker compose up --build` from repository root to launch both frontend and backend locally or on any VPS.
+3. Configure environment variable: `NEXT_PUBLIC_API_URL=https://your-backend-domain.com`.
 
 ---
 

@@ -9,7 +9,7 @@ from typing import Optional
 import uuid
 
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func
 
 from app.core.config import settings
 from app.db.session import SessionLocal, engine, Base
@@ -19,6 +19,8 @@ from app.models.entities import (
     ProcessingRun,
     ImageDerivative,
     IdentificationCandidate,
+    LibraryItem,
+    ItemSource,
 )
 from app.adapters.storage import get_storage_adapter, BaseStorageAdapter
 from app.adapters.ai import get_ai_adapter, GeminiAdapter
@@ -289,7 +291,15 @@ async def _process_job_async(
             job.error_message = extraction_res.error_message
             job.error_details = {"error_category": extraction_res.error_category}
 
-            if job.retry_count >= job.max_retries:
+            is_daily_quota = (
+                extraction_res.error_category == "rate_limit" and (
+                    "daily limit" in (extraction_res.error_message or "").lower() or
+                    "per day" in (extraction_res.error_message or "").lower() or
+                    "free_tier_requests" in (extraction_res.error_message or "").lower()
+                )
+            )
+
+            if is_daily_quota or job.retry_count >= job.max_retries:
                 job.status = "failed"
                 job.completed_at = datetime.now(timezone.utc)
             else:
@@ -324,10 +334,25 @@ async def _process_job_async(
             IdentificationCandidate.review_status.in_(["pending", "needs_review"]),
         ).delete(synchronize_session=False)
 
+        # Look up existing initial LibraryItem created during screenshot upload
+        existing_item_source = (
+            db.query(ItemSource)
+            .join(LibraryItem, ItemSource.library_item_id == LibraryItem.id)
+            .filter(
+                ItemSource.source_asset_id == asset.id,
+                LibraryItem.user_id == job.user_id,
+            )
+            .first()
+        )
+        initial_library_item = existing_item_source.library_item if existing_item_source else None
+
         # 10. Process candidates and generate high-fidelity derivative crops
         candidate_count = 0
-        for cand_out in extraction_res.candidates:
+        completion_time = datetime.now(timezone.utc)
+
+        for idx, cand_out in enumerate(extraction_res.candidates):
             derivative_id = None
+            crop_storage_path = None
 
             # Generate crop if candidate provided a valid bounding box
             if cand_out.bounding_box:
@@ -376,6 +401,7 @@ async def _process_job_async(
             meta_router = MetadataProviderRouter()
             res_engine = EntityResolutionEngine()
             provider_candidates_data = []
+            top_provider_match = None
             try:
                 search_query = MetadataSearchQuery(
                     title=cand_out.title,
@@ -389,12 +415,77 @@ async def _process_job_async(
                     provider_candidates_data = [m.model_dump() for m in ranked_matches]
                     if ranked_matches and ranked_matches[0].is_top_match:
                         top = ranked_matches[0].record
+                        top_provider_match = top.model_dump()
                         if top.provider_url and not getattr(cand_out, "direct_url", None):
                             direct_link = top.provider_url
             except Exception as meta_err:
                 logger.warning(f"Metadata enrichment error for '{cand_out.title}': {meta_err}")
 
-            # Insert IdentificationCandidate record
+            # Determine best cover image URL (prefer local crop derivative, then provider cover, then original screenshot)
+            if crop_storage_path:
+                best_cover = f"/api/v1/assets/media/{crop_storage_path.lstrip('/')}"
+            elif top_provider_match and top_provider_match.get("cover_image_url"):
+                best_cover = top_provider_match["cover_image_url"]
+            else:
+                best_cover = f"/api/v1/assets/media/{asset.file_path.lstrip('/')}"
+
+            # Directly update or add to library
+            assigned_item_id = None
+            if idx == 0 and initial_library_item:
+                initial_library_item.title = cand_out.title
+                initial_library_item.creator = cand_out.creator
+                initial_library_item.content_type = cand_out.content_type or "other"
+                initial_library_item.subcategory = subcat
+                initial_library_item.direct_url = direct_link
+                initial_library_item.release_year = cand_out.year_clue
+                initial_library_item.overview = cand_out.description_clue
+                initial_library_item.cover_image_url = best_cover
+                if top_provider_match:
+                    initial_library_item.original_title = top_provider_match.get("original_title")
+                    initial_library_item.isbn = top_provider_match.get("isbn")
+                    initial_library_item.genre = top_provider_match.get("genre")
+                    initial_library_item.publisher = top_provider_match.get("publisher")
+                    initial_library_item.external_provider = top_provider_match.get("provider_name")
+                    initial_library_item.external_id = top_provider_match.get("external_id")
+                    initial_library_item.provider_metadata = top_provider_match.get("raw_payload", {})
+                initial_library_item.verification_status = "verified"
+                assigned_item_id = initial_library_item.id
+            else:
+                new_lib_item = LibraryItem(
+                    id=str(uuid.uuid4()),
+                    user_id=job.user_id,
+                    title=cand_out.title,
+                    creator=cand_out.creator,
+                    content_type=cand_out.content_type or "other",
+                    subcategory=subcat,
+                    direct_url=direct_link,
+                    consumption_status="want_to_consume",
+                    release_year=cand_out.year_clue,
+                    overview=cand_out.description_clue,
+                    cover_image_url=best_cover,
+                    original_title=top_provider_match.get("original_title") if top_provider_match else None,
+                    isbn=top_provider_match.get("isbn") if top_provider_match else None,
+                    genre=top_provider_match.get("genre") if top_provider_match else None,
+                    publisher=top_provider_match.get("publisher") if top_provider_match else None,
+                    external_provider=top_provider_match.get("provider_name") if top_provider_match else None,
+                    external_id=top_provider_match.get("external_id") if top_provider_match else None,
+                    provider_metadata=top_provider_match.get("raw_payload", {}) if top_provider_match else {},
+                    verification_status="verified",
+                )
+                db.add(new_lib_item)
+                db.flush()
+
+                new_src = ItemSource(
+                    id=str(uuid.uuid4()),
+                    library_item_id=new_lib_item.id,
+                    source_asset_id=asset.id,
+                    crop_coordinates=cand_out.bounding_box.model_dump() if cand_out.bounding_box else None,
+                    detection_confidence=cand_out.confidence,
+                )
+                db.add(new_src)
+                assigned_item_id = new_lib_item.id
+
+            # Insert IdentificationCandidate record linked to library item
             cand_record = IdentificationCandidate(
                 id=str(uuid.uuid4()),
                 job_id=job.id,
@@ -419,11 +510,17 @@ async def _process_job_async(
                 provider_candidates=provider_candidates_data,
                 review_status="needs_review",
                 resolution_status="pending",
+                resolved_library_item_id=assigned_item_id,
                 prompt_version=extraction_res.prompt_version,
                 ai_model_name=extraction_res.ai_model_name,
             )
             db.add(cand_record)
             candidate_count += 1
+
+        if candidate_count == 0 and initial_library_item:
+            initial_library_item.overview = "Screenshot preserved in library. No title was automatically recognized — you can edit details or keep it as is."
+            initial_library_item.cover_image_url = f"/api/v1/assets/media/{asset.file_path.lstrip('/')}"
+            initial_library_item.verification_status = "verified"
 
         # 11. Update job completion status with lease ownership verification
         completion_time = datetime.now(timezone.utc)

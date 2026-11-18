@@ -10,9 +10,12 @@ import { QuickUploadModal } from "@/components/dashboard/QuickUploadModal";
 import { AskLibraryModal } from "@/components/dashboard/AskLibraryModal";
 import { checkBackendHealth, getLibraryItems, getProcessingJobs } from "@/lib/api";
 import { HealthStatus, LibraryItem, ProcessingJob } from "@/types";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Loader2, UploadCloud } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { LandingPage } from "@/components/landing/LandingPage";
 
 export default function DashboardPage() {
+  const { user, isLoading: isAuthLoading, openAuthModal } = useAuth();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
@@ -22,6 +25,7 @@ export default function DashboardPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const refreshData = useCallback(async () => {
+    if (!user) return;
     setIsLoading(true);
     try {
       const [healthRes, itemsRes, jobsRes] = await Promise.all([
@@ -37,9 +41,14 @@ export default function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [user]);
 
   useEffect(() => {
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
+
     let isSubscribed = true;
 
     async function initialFetch() {
@@ -67,7 +76,27 @@ export default function DashboardPage() {
     return () => {
       isSubscribed = false;
     };
-  }, []);
+  }, [user]);
+
+  // If session is initializing, show clean spinner
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-[#FBF9F5] flex flex-col items-center justify-center p-6 space-y-4">
+        <Loader2 className="h-8 w-8 text-amber-600 animate-spin" />
+        <p className="text-sm font-semibold text-stone-600">Loading MediaMind...</p>
+      </div>
+    );
+  }
+
+  // If visitor is unauthenticated, show public product landing page
+  if (!user) {
+    return (
+      <LandingPage
+        onSignIn={() => openAuthModal("signin")}
+        onSignUp={() => openAuthModal("signup")}
+      />
+    );
+  }
 
   // Derived metrics
   const totalItems = libraryItems.length;
@@ -79,7 +108,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex">
       {/* Sidebar */}
-      <Sidebar health={health} pendingReviewCount={pendingReviewCount} />
+      <Sidebar health={health} pendingReviewCount={pendingReviewCount} onOpenUpload={() => setIsUploadOpen(true)} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
@@ -105,14 +134,24 @@ export default function DashboardPage() {
               </p>
             </div>
 
-            <button
-              onClick={refreshData}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 text-stone-800 text-xs font-bold transition-all shadow-sm"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
-              <span>Refresh Library</span>
-            </button>
+            <div className="flex items-center gap-2.5">
+              <button
+                onClick={refreshData}
+                disabled={isLoading}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 text-stone-800 text-xs font-bold transition-all shadow-sm cursor-pointer"
+              >
+                <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
+                <span>Refresh</span>
+              </button>
+
+              <button
+                onClick={() => setIsUploadOpen(true)}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-sm shadow-amber-600/20 active:scale-95 cursor-pointer"
+              >
+                <UploadCloud className="h-4 w-4" />
+                <span>Add Screenshot</span>
+              </button>
+            </div>
           </div>
 
           {/* Processing and Review Alert Banners */}

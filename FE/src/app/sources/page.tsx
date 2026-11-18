@@ -13,6 +13,8 @@ import {
 } from "@/lib/api";
 import { CustomSelect, SelectOption } from "@/components/ui/CustomSelect";
 import { ImageViewerModal } from "@/components/ui/ImageViewerModal";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { AuthGuard } from "@/components/auth/AuthGuard";
 import {
   HealthStatus,
   SourceAsset,
@@ -25,6 +27,7 @@ import {
   RefreshCw,
   Clock,
   CheckCircle2,
+  XCircle,
   AlertCircle,
   RotateCcw,
   ExternalLink,
@@ -64,22 +67,35 @@ export default function SourcesPage() {
   // Detail Drawer state
   const [selectedAsset, setSelectedAsset] = useState<SourceAssetDetail | null>(null);
   const [retryingJobId, setRetryingJobId] = useState<string | null>(null);
-  const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; fileName: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
 
-  const handleDeleteAsset = async (assetId: string, fileName: string, e?: React.MouseEvent) => {
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
+  const promptDeleteAsset = (assetId: string, fileName: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!confirm(`Are you sure you want to permanently delete '${fileName}'?`)) return;
-    setIsDeletingId(assetId);
+    setDeleteTarget({ id: assetId, fileName });
+  };
+
+  const handleConfirmDeleteAsset = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
     try {
-      await deleteSourceAsset(assetId);
-      if (selectedAsset?.id === assetId) {
+      await deleteSourceAsset(deleteTarget.id);
+      if (selectedAsset?.id === deleteTarget.id) {
         setSelectedAsset(null);
       }
+      showToast(`'${deleteTarget.fileName}' was permanently deleted.`);
+      setDeleteTarget(null);
       await loadSources();
     } catch (err) {
-      alert("Failed to delete screenshot: " + String(err));
+      showToast("Failed to delete screenshot: " + (err instanceof Error ? err.message : String(err)), "error");
     } finally {
-      setIsDeletingId(null);
+      setIsDeleting(false);
     }
   };
 
@@ -162,8 +178,9 @@ export default function SourcesPage() {
       setAssets((prev) =>
         prev.map((a) => (a.id === selectedAsset?.id ? { ...a, latest_status: updated.status as JobStatus } : a))
       );
+      showToast("Job retry initiated successfully.");
     } catch (err) {
-      alert("Failed to retry job: " + String(err));
+      showToast("Failed to retry job: " + (err instanceof Error ? err.message : String(err)), "error");
     } finally {
       setRetryingJobId(null);
     }
@@ -212,13 +229,41 @@ export default function SourcesPage() {
   const totalPages = Math.ceil(totalCount / limit);
 
   return (
-    <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex">
+    <AuthGuard featureName="Saved Screenshots Vault">
+      <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex">
       <Sidebar health={health} />
 
       <div className="flex-1 flex flex-col min-w-0">
         <Header />
 
         <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6">
+          {/* Toast Notification */}
+          {toast && (
+            <div
+              className={`p-4 rounded-2xl border flex items-center justify-between text-sm transition-all duration-300 shadow-md ${
+                toast.type === "success"
+                  ? "bg-emerald-50 border-emerald-300 text-emerald-900"
+                  : "bg-rose-50 border-rose-300 text-rose-900"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                {toast.type === "success" ? (
+                  <CheckCircle2 className="h-5 w-5 text-emerald-700" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-rose-600" />
+                )}
+                <span className="font-semibold">{toast.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setToast(null)}
+                className="text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-200">
             <div>
@@ -344,8 +389,8 @@ export default function SourcesPage() {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
-                        onClick={(e) => handleDeleteAsset(asset.id, asset.file_name, e)}
-                        disabled={isDeletingId === asset.id}
+                        onClick={(e) => promptDeleteAsset(asset.id, asset.file_name, e)}
+                        disabled={isDeleting}
                         className="p-1 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                         title="Delete screenshot"
                       >
@@ -544,8 +589,8 @@ export default function SourcesPage() {
             <div className="pt-4 border-t border-stone-200 flex items-center justify-between">
               <button
                 type="button"
-                onClick={() => handleDeleteAsset(selectedAsset.id, selectedAsset.file_name)}
-                disabled={isDeletingId === selectedAsset.id}
+                onClick={() => promptDeleteAsset(selectedAsset.id, selectedAsset.file_name)}
+                disabled={isDeleting}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-rose-600 hover:bg-rose-50 text-xs font-bold transition-colors cursor-pointer"
               >
                 <Trash2 className="h-4 w-4" />
@@ -570,6 +615,35 @@ export default function SourcesPage() {
         imageUrl={viewerImage?.url}
         title={viewerImage?.title}
       />
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => {
+          if (!isDeleting) setDeleteTarget(null);
+        }}
+        onConfirm={handleConfirmDeleteAsset}
+        title="Permanently Delete Screenshot?"
+        description={
+          <div className="space-y-2">
+            <p>
+              Are you sure you want to permanently delete{" "}
+              <span className="font-semibold text-stone-900">
+                &lsquo;{deleteTarget?.fileName}&rsquo;
+              </span>
+              ?
+            </p>
+            <p className="text-[11px] text-stone-500">
+              This will remove the screenshot from storage and all extracted AI candidate proposals. This action cannot be undone.
+            </p>
+          </div>
+        }
+        confirmText="Permanently Delete"
+        variant="danger"
+        icon="trash"
+        isLoading={isDeleting}
+      />
     </div>
+    </AuthGuard>
   );
 }

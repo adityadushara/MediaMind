@@ -199,3 +199,80 @@ def test_library_subcategory_and_direct_url(client):
     subcats = sub_res.json()
     assert "Psychology" in subcats
     assert "Habits" in subcats
+
+
+def test_upload_directly_adds_to_library_and_has_screenshot_url(client):
+    user_id = "user-direct-library-test"
+    headers = {"X-Dev-User-Id": user_id}
+
+    img = generate_test_image("purple")
+    upload_res = client.post(
+        "/api/v1/assets/upload",
+        files=[("files", ("book_reading.png", io.BytesIO(img), "image/png"))],
+        headers=headers,
+    )
+    assert upload_res.status_code == 202
+    data = upload_res.json()["assets"][0]
+    assert "library_item_id" in data
+    lib_id = data["library_item_id"]
+    assert lib_id is not None
+
+    # Fetch directly from library API
+    get_res = client.get(f"/api/v1/library/{lib_id}", headers=headers)
+    assert get_res.status_code == 200
+    item = get_res.json()
+    assert item["id"] == lib_id
+    assert item["verification_status"] == "verified"
+    assert item["screenshot_url"] is not None
+    assert "/api/v1/assets/media/" in item["screenshot_url"]
+    assert len(item["sources"]) == 1
+
+
+def test_library_verification_endpoints(client):
+    user_id = "user-verification-test"
+    headers = {"X-Dev-User-Id": user_id}
+
+    # Upload two screenshots, each directly creating a library item in verified state
+    img1 = generate_test_image("orange")
+    img2 = generate_test_image("cyan")
+    res1 = client.post(
+        "/api/v1/assets/upload?force_reupload=true",
+        files=[("files", ("shot1.png", io.BytesIO(img1), "image/png"))],
+        headers=headers,
+    )
+    res2 = client.post(
+        "/api/v1/assets/upload?force_reupload=true",
+        files=[("files", ("shot2.png", io.BytesIO(img2), "image/png"))],
+        headers=headers,
+    )
+    assert res1.status_code == 202
+    assert res2.status_code == 202
+    id1 = res1.json()["assets"][0]["library_item_id"]
+    id2 = res2.json()["assets"][0]["library_item_id"]
+
+    # Verify items are directly in the library as verified
+    list_items = client.get("/api/v1/library?verification_status=verified", headers=headers)
+    assert list_items.status_code == 200
+    verified_ids = [it["id"] for it in list_items.json()["items"]]
+    assert id1 in verified_ids
+    assert id2 in verified_ids
+
+    # Verify single item via POST /api/v1/library/{id}/verify
+    verify_one = client.post(f"/api/v1/library/{id1}/verify", headers=headers)
+    assert verify_one.status_code == 200
+    assert verify_one.json()["verification_status"] == "verified"
+
+    # Verify verify-all endpoint
+    verify_all = client.post("/api/v1/library/verify-all", headers=headers)
+    assert verify_all.status_code == 200
+
+    # Verify update verification_status via PATCH
+    patch_res = client.patch(
+        f"/api/v1/library/{id2}",
+        json={"title": "Updated Title", "verification_status": "verified", "user_rating": 9},
+        headers=headers,
+    )
+    assert patch_res.status_code == 200
+    assert patch_res.json()["title"] == "Updated Title"
+    assert patch_res.json()["user_rating"] == 9
+

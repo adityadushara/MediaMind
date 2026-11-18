@@ -28,6 +28,12 @@ from app.schemas.common import (
 )
 from app.adapters.storage import get_storage_adapter
 
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+except Exception:
+    pass
+
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/assets", tags=["Source Assets"])
 
@@ -36,6 +42,7 @@ ALLOWED_MIME_TYPES = {
     "image/jpeg": ".jpg",
     "image/jpg": ".jpg",
     "image/webp": ".webp",
+    "image/avif": ".avif",
 }
 MAX_FILE_SIZE = 15 * 1024 * 1024  # 15 MB
 
@@ -173,6 +180,37 @@ async def upload_assets(
                 status="awaiting_identification"
             )
             db.add(job)
+
+            # Directly add to user's library so user never has to wait in review queue
+            clean_name = Path(upload_file.filename or "screenshot").stem
+            clean_title = clean_name.replace("_", " ").replace("-", " ").strip()
+            display_title = clean_title.title() if clean_title and not clean_title.lower().startswith("screenshot") else "Uploaded Screenshot"
+
+            library_item_id = str(uuid.uuid4())
+            initial_item = LibraryItem(
+                id=library_item_id,
+                user_id=current_user.id,
+                title=display_title,
+                creator=None,
+                content_type="other",
+                subcategory=None,
+                direct_url=None,
+                consumption_status="want_to_consume",
+                release_year=None,
+                overview="AI is analyzing screenshot details...",
+                cover_image_url=f"/api/v1/assets/media/{stored_path.lstrip('/')}",
+                verification_status="verified",
+            )
+            db.add(initial_item)
+
+            item_source = ItemSource(
+                id=str(uuid.uuid4()),
+                library_item_id=library_item_id,
+                source_asset_id=asset_id,
+                detection_confidence=1.0,
+            )
+            db.add(item_source)
+
             db.commit()
         except Exception as e:
             db.rollback()
@@ -197,7 +235,8 @@ async def upload_assets(
             mime_type=mime_type,
             job_id=job_id,
             status="awaiting_identification",
-            is_duplicate=False
+            is_duplicate=False,
+            library_item_id=library_item_id
         ))
 
     return BatchUploadResponse(assets=results, total_count=len(results))
@@ -409,10 +448,26 @@ async def serve_local_media(
 
     # 2. Canonical resolution against storage root
     storage_root = Path(settings.LOCAL_STORAGE_PATH).resolve()
-    user_storage_root = (storage_root / "screenshots" / current_user.id).resolve()
-
     clean_subpath = decoded_path.lstrip("/\\").replace("\\", "/")
+
+    effective_user_id = current_user.id
+    user_storage_root = (storage_root / "screenshots" / effective_user_id).resolve()
     target_path = (storage_root / clean_subpath).resolve()
+
+    # Alternate storage path fallback if primary directory doesn't have the file
+    if not target_path.exists():
+        for candidate_root in [
+            (storage_root.parent / "storage_data").resolve(),
+            (storage_root.parent / "BE" / "storage_data").resolve(),
+            (storage_root / "BE" / "storage_data").resolve(),
+        ]:
+            cand_user_root = (candidate_root / "screenshots" / effective_user_id).resolve()
+            cand_target = (candidate_root / clean_subpath).resolve()
+            if cand_target.exists() and cand_target.is_relative_to(cand_user_root):
+                storage_root = candidate_root
+                user_storage_root = cand_user_root
+                target_path = cand_target
+                break
 
     # 3. Enforce that the canonical resolved path is strictly within the user's storage root
     if not target_path.is_relative_to(user_storage_root):
@@ -435,12 +490,12 @@ async def serve_local_media(
     # 5. Database ownership check: verify the file is a registered SourceAsset or ImageDerivative owned by user
     rel_storage_path = str(target_path.relative_to(storage_root)).replace("\\", "/")
     asset_match = db.query(SourceAsset).filter(
-        SourceAsset.user_id == current_user.id,
+        SourceAsset.user_id == effective_user_id,
         SourceAsset.file_path == rel_storage_path,
     ).first()
     if not asset_match:
         derivative_match = db.query(ImageDerivative).filter(
-            ImageDerivative.user_id == current_user.id,
+            ImageDerivative.user_id == effective_user_id,
             ImageDerivative.storage_path == rel_storage_path,
         ).first()
         if not derivative_match:
@@ -452,10 +507,26 @@ async def serve_local_media(
     storage = get_storage_adapter()
     try:
         data = await storage.download_file(rel_storage_path)
-        mime = "image/png" if rel_storage_path.endswith(".png") else "image/jpeg"
-        return Response(content=data, media_type=mime)
     except (FileNotFoundError, PermissionError):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+        if target_path.exists():
+            data = target_path.read_bytes()
+        else:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not found")
+
+    ext = os.path.splitext(rel_storage_path)[1].lower()
+    content_type_map = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".avif": "image/avif",
+    }
+    mime = content_type_map.get(ext, "image/jpeg")
+    return Response(
+        content=data,
+        media_type=mime,
+        headers={"Cache-Control": "public, max-age=3600"}
+    )
 
 
 @router.get("/{asset_id}/file")

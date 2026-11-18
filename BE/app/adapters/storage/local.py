@@ -29,6 +29,16 @@ class LocalStorageAdapter(BaseStorageAdapter):
     async def download_file(self, file_path: str) -> bytes:
         target_file = self._resolve_safe_path(file_path)
         if not target_file.exists():
+            clean_path = file_path.lstrip("/\\").replace("\\", "/")
+            fallbacks = [
+                (self.base_path.parent / "BE" / "storage_data").resolve(),
+                (self.base_path.parent / "storage_data").resolve(),
+            ]
+            for fb in fallbacks:
+                alt = (fb / clean_path).resolve()
+                if alt.exists() and alt.is_relative_to(fb):
+                    with open(alt, "rb") as f:
+                        return f.read()
             raise FileNotFoundError(f"Storage file not found: {file_path}")
         with open(target_file, "rb") as f:
             return f.read()
@@ -40,7 +50,18 @@ class LocalStorageAdapter(BaseStorageAdapter):
 
     async def delete_file(self, file_path: str) -> bool:
         target_file = self._resolve_safe_path(file_path)
+        deleted = False
         if target_file.exists():
             target_file.unlink()
-            return True
-        return False
+            deleted = True
+        clean_path = file_path.lstrip("/\\").replace("\\", "/")
+        fallbacks = [
+            (self.base_path.parent / "BE" / "storage_data").resolve(),
+            (self.base_path.parent / "storage_data").resolve(),
+        ]
+        for fb in fallbacks:
+            alt = (fb / clean_path).resolve()
+            if alt.exists() and alt.is_relative_to(fb):
+                alt.unlink()
+                deleted = True
+        return deleted

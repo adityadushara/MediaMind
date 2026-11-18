@@ -67,7 +67,7 @@ def test_gemini_successful_extraction_parsing():
         "detected_regions_count": 1
     }"""
 
-    adapter = GeminiAdapter(api_key="dummy_key")
+    adapter = GeminiAdapter(api_key="dummy_key", model_name="gemini-2.5-flash")
 
     mock_response = MagicMock()
     mock_response.text = sample_json
@@ -118,7 +118,7 @@ def test_gemini_official_pricing_calculation():
 
 def test_gemini_empty_candidate_response():
     sample_json = '{"candidates": [], "detected_regions_count": 0}'
-    adapter = GeminiAdapter(api_key="dummy_key")
+    adapter = GeminiAdapter(api_key="dummy_key", model_name="gemini-2.5-flash")
 
     mock_response = MagicMock()
     mock_response.text = sample_json
@@ -146,7 +146,7 @@ def test_gemini_markdown_fence_fallback_recovery():
         ]
     }
     ```"""
-    adapter = GeminiAdapter(api_key="dummy_key")
+    adapter = GeminiAdapter(api_key="dummy_key", model_name="gemini-2.5-flash")
 
     mock_response = MagicMock()
     mock_response.text = sample_text
@@ -160,7 +160,7 @@ def test_gemini_markdown_fence_fallback_recovery():
 
 
 def test_gemini_api_error_handling():
-    adapter = GeminiAdapter(api_key="dummy_key")
+    adapter = GeminiAdapter(api_key="dummy_key", model_name="gemini-2.5-flash")
 
     err = APIError(400, {"message": "Invalid request parameter"})
     with patch.object(adapter._client.models, "generate_content", side_effect=err):
@@ -171,7 +171,7 @@ def test_gemini_api_error_handling():
 
 
 def test_gemini_transient_rate_limit_retry():
-    adapter = GeminiAdapter(api_key="dummy_key")
+    adapter = GeminiAdapter(api_key="dummy_key", model_name="gemini-2.5-flash")
 
     rate_limit_err = APIError(429, {"message": "Quota exceeded"})
     success_json = '{"candidates": [{"content_type": "course", "title": "Machine Learning", "confidence": 0.8}]}'

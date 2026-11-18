@@ -74,3 +74,18 @@ def test_production_mode_rejects_unauthenticated_and_dev_header(client):
         assert "error" in data or "detail" in data
     finally:
         settings.ENVIRONMENT = original_env
+
+
+def test_cors_origin_validator_supports_csv_and_json():
+    from app.core.config import Settings
+    s1 = Settings(BACKEND_CORS_ORIGINS="https://app.vercel.app, https://custom.com")
+    assert s1.BACKEND_CORS_ORIGINS == ["https://app.vercel.app", "https://custom.com"]
+
+    s2 = Settings(BACKEND_CORS_ORIGINS='["https://json-origin.vercel.app"]')
+    assert s2.BACKEND_CORS_ORIGINS == ["https://json-origin.vercel.app"]
+
+
+def test_database_url_normalizes_postgres_scheme():
+    from app.core.config import Settings
+    s = Settings(DATABASE_URL="postgres://user:pass@host:5432/dbname")
+    assert s.DATABASE_URL == "postgresql://user:pass@host:5432/dbname"

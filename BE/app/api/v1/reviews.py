@@ -230,6 +230,11 @@ def accept_candidate(
     genre = payload.genre or (top_provider_match.get("genre") if top_provider_match else None)
     publisher = payload.publisher or (top_provider_match.get("publisher") if top_provider_match else None)
     cover_image_url = payload.cover_image_url or (top_provider_match.get("cover_image_url") if top_provider_match else None)
+    crop_path = getattr(cand, "crop_path", None)
+    if not cover_image_url and crop_path:
+        cover_image_url = f"/api/v1/assets/media/{crop_path.lstrip('/')}"
+    elif not cover_image_url and getattr(cand, "source_asset", None) and getattr(cand.source_asset, "file_path", None):
+        cover_image_url = f"/api/v1/assets/media/{cand.source_asset.file_path.lstrip('/')}"
     provider_meta = payload.provider_metadata or (top_provider_match.get("raw_payload", {}) if top_provider_match else {})
 
     # Check for existing item (Deduplication Tiers 1 and 2)

@@ -5,7 +5,7 @@ import json
 import logging
 import time
 from typing import Optional, Dict, Any, Tuple
-from fastapi import Header, HTTPException, status, Depends
+from fastapi import Header, HTTPException, status, Depends, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.config import settings
 
@@ -60,15 +60,16 @@ def decode_jwt_token(token: str, secret: Optional[str] = None) -> Tuple[Dict[str
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
+    token: Optional[str] = Query(None),
     x_dev_user_id: Optional[str] = Header(None, alias="X-Dev-User-Id"),
 ) -> AuthenticatedUser:
     """
-    Authenticate request via Supabase JWT.
+    Authenticate request via Supabase JWT (from Authorization header or ?token= query parameter).
     In production, strict cryptographic token validation is mandatory.
     Development fallback is strictly prevented from operating in production.
     """
-    if credentials and credentials.credentials:
-        token = credentials.credentials
+    raw_token = (credentials.credentials if credentials else None) or token
+    if raw_token:
         try:
             # If in production, verify signature with secret
             secret = settings.SUPABASE_JWT_SECRET if settings.ENVIRONMENT == "production" else None
@@ -79,7 +80,7 @@ async def get_current_user(
                     detail="Server authentication configuration error"
                 )
 
-            _, payload = decode_jwt_token(token, secret=secret)
+            _, payload = decode_jwt_token(raw_token, secret=secret)
             user_id = payload.get("sub") or payload.get("user_id")
             if not user_id:
                 raise HTTPException(

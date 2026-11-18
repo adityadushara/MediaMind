@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { AskLibraryModal } from "@/components/dashboard/AskLibraryModal";
+import { QuickUploadModal } from "@/components/dashboard/QuickUploadModal";
 import {
   checkBackendHealth,
   getLibraryItems,
@@ -20,6 +21,8 @@ import {
 } from "@/lib/api";
 import { CustomSelect, SelectOption } from "@/components/ui/CustomSelect";
 import { ImageViewerModal } from "@/components/ui/ImageViewerModal";
+import { ConfirmModal } from "@/components/ui/ConfirmModal";
+import { AuthGuard } from "@/components/auth/AuthGuard";
 import {
   HealthStatus,
   LibraryItem,
@@ -57,6 +60,10 @@ import {
   Tag,
   ArrowUpDown,
   ZoomIn,
+  Check,
+  Edit3,
+  Sparkles,
+  Loader2,
 } from "lucide-react";
 
 const STATUS_FILTER_OPTIONS: SelectOption[] = [
@@ -94,11 +101,114 @@ const CONTENT_TYPE_SELECT_OPTIONS: SelectOption[] = [
   { value: "other", label: "📁 Other" },
 ];
 
+function MediaItemThumbnail({
+  item,
+  onInspect,
+  viewMode = "grid",
+  badge,
+}: {
+  item: LibraryItem;
+  onInspect: () => void;
+  viewMode?: "grid" | "list";
+  badge: { icon: React.ReactNode; label: string; bg: string };
+}) {
+  const primaryUrl = item.cover_image_url || item.screenshot_url || "";
+  const fallbackUrl =
+    item.screenshot_url && item.screenshot_url !== item.cover_image_url
+      ? item.screenshot_url
+      : "";
+
+  const [src, setSrc] = useState<string>(resolveMediaUrl(primaryUrl));
+  const [triedFallback, setTriedFallback] = useState(false);
+  const [failed, setFailed] = useState(!primaryUrl);
+
+  useEffect(() => {
+    const currentPrimary = item.cover_image_url || item.screenshot_url || "";
+    setSrc(resolveMediaUrl(currentPrimary));
+    setTriedFallback(false);
+    setFailed(!currentPrimary);
+  }, [item.cover_image_url, item.screenshot_url]);
+
+  const handleError = () => {
+    if (!triedFallback && fallbackUrl) {
+      setTriedFallback(true);
+      setSrc(resolveMediaUrl(fallbackUrl));
+    } else {
+      setFailed(true);
+    }
+  };
+
+  if (viewMode === "list") {
+    return (
+      <div
+        onClick={onInspect}
+        className="h-16 w-16 rounded-xl overflow-hidden border border-stone-200 bg-stone-100 shrink-0 cursor-pointer relative group/listthumb flex items-center justify-center shadow-2xs"
+        title="Click to view full screenshot"
+      >
+        {!failed && src ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={src}
+            alt={item.title}
+            referrerPolicy="no-referrer"
+            onError={handleError}
+            className="w-full h-full object-cover group-hover/listthumb:scale-105 transition-transform duration-300"
+          />
+        ) : (
+          <div className="p-2 items-center justify-center text-stone-400">
+            {badge.icon}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      onClick={onInspect}
+      className="relative w-full h-48 rounded-xl overflow-hidden bg-stone-100 border border-stone-200/90 mb-3 cursor-pointer group/thumb flex items-center justify-center shadow-2xs"
+      title="Click to view full screenshot & inspect"
+    >
+      {!failed && src ? (
+        /* eslint-disable-next-line @next/next/no-img-element */
+        <img
+          src={src}
+          alt={item.title}
+          referrerPolicy="no-referrer"
+          onError={handleError}
+          className="w-full h-full object-cover group-hover/thumb:scale-105 transition-transform duration-300"
+        />
+      ) : null}
+
+      <div
+        className={`${
+          !failed && src ? "hidden" : "flex"
+        } flex-col items-center justify-center gap-1.5 text-stone-400 p-4 text-center`}
+      >
+        <div className={`p-3 rounded-2xl border ${badge.bg}`}>
+          {badge.icon}
+        </div>
+        <span className="text-[11px] font-semibold text-stone-500">
+          {badge.label}
+        </span>
+      </div>
+
+      <div className="absolute inset-0 bg-stone-900/0 group-hover/thumb:bg-stone-900/20 transition-colors flex items-center justify-center">
+        <span className="opacity-0 group-hover/thumb:opacity-100 transition-opacity px-3 py-1.5 rounded-lg bg-stone-900/85 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md backdrop-blur-xs">
+          <ZoomIn className="h-3.5 w-3.5" />
+          <span>Zoom Image</span>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function LibraryPage() {
   const router = useRouter();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [selectedType, setSelectedType] = useState<string>("all");
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>("all");
@@ -126,6 +236,18 @@ export default function LibraryPage() {
   const [newDirectUrl, setNewDirectUrl] = useState("");
   const [newStatus, setNewStatus] = useState<ConsumptionStatus>("want_to_consume");
   const [newOverview, setNewOverview] = useState("");
+
+  // Edit Item Modal state
+  const [editingItem, setEditingItem] = useState<LibraryItem | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editCreator, setEditCreator] = useState("");
+  const [editType, setEditType] = useState<ContentType>("book");
+  const [editSubcategory, setEditSubcategory] = useState("");
+  const [editDirectUrl, setEditDirectUrl] = useState("");
+  const [editStatus, setEditStatus] = useState<ConsumptionStatus>("want_to_consume");
+  const [editOverview, setEditOverview] = useState("");
+  const [editRating, setEditRating] = useState<number>(0);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   // Horizontal mouse scroll wheel & drag-to-scroll support for category tabs without scrollbars
   const categoryTabsRef = useRef<HTMLDivElement>(null);
@@ -232,6 +354,15 @@ export default function LibraryPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("upload") === "true") {
+        setIsUploadOpen(true);
+      }
+    }
+  }, []);
+
   // Fetch subcategories when content type changes
   useEffect(() => {
     let isSubscribed = true;
@@ -302,6 +433,21 @@ export default function LibraryPage() {
     }
   };
 
+  // Delete Confirmation & Toast state
+  const [deleteTarget, setDeleteTarget] = useState<{
+    type: "item" | "unlink";
+    id: string;
+    title: string;
+    assetId?: string;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
+
+  const showToast = (message: string, type: "success" | "error" = "success") => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 4000);
+  };
+
   const handleLinkSource = async () => {
     if (!selectedItemDetail || !selectedSourceToLink) return;
     setIsLinkingLoading(true);
@@ -310,24 +456,54 @@ export default function LibraryPage() {
       const updated = await getLibraryItemDetail(selectedItemDetail.id);
       setSelectedItemDetail(updated);
       setIsLinkingOpen(false);
+      showToast("Screenshot successfully linked to item.");
     } catch (err) {
-      alert("Failed to link screenshot: " + String(err));
+      showToast("Failed to link screenshot: " + (err instanceof Error ? err.message : String(err)), "error");
     } finally {
       setIsLinkingLoading(false);
     }
   };
 
-  const handleUnlinkSource = async (assetId: string) => {
+  const promptUnlinkSource = (assetId: string) => {
     if (!selectedItemDetail) return;
-    if (!confirm("Are you sure you want to unlink this screenshot? The original screenshot remains preserved.")) {
-      return;
-    }
+    setDeleteTarget({
+      type: "unlink",
+      id: selectedItemDetail.id,
+      title: selectedItemDetail.title,
+      assetId,
+    });
+  };
+
+  const promptDeleteItem = (itemId: string, itemTitle: string) => {
+    setDeleteTarget({
+      type: "item",
+      id: itemId,
+      title: itemTitle,
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
     try {
-      await unlinkSourceFromLibraryItem(selectedItemDetail.id, assetId);
-      const updated = await getLibraryItemDetail(selectedItemDetail.id);
-      setSelectedItemDetail(updated);
+      if (deleteTarget.type === "item") {
+        await deleteLibraryItem(deleteTarget.id);
+        setItems((prev) => prev.filter((it) => it.id !== deleteTarget.id));
+        if (selectedItemDetail?.id === deleteTarget.id) {
+          setSelectedItemDetail(null);
+        }
+        showToast(`"${deleteTarget.title}" was removed from your library.`);
+      } else if (deleteTarget.type === "unlink" && deleteTarget.assetId) {
+        await unlinkSourceFromLibraryItem(deleteTarget.id, deleteTarget.assetId);
+        const updated = await getLibraryItemDetail(deleteTarget.id);
+        setSelectedItemDetail(updated);
+        showToast("Screenshot unlinked successfully.");
+      }
+      setDeleteTarget(null);
     } catch (err) {
-      alert("Failed to unlink screenshot: " + String(err));
+      showToast("Operation failed: " + (err instanceof Error ? err.message : String(err)), "error");
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -360,18 +536,8 @@ export default function LibraryPage() {
   };
 
   const handleDeleteItem = async (itemId: string) => {
-    if (!confirm("Are you sure you want to remove this item? Original screenshots remain safely in your vault.")) {
-      return;
-    }
-    try {
-      await deleteLibraryItem(itemId);
-      setItems((prev) => prev.filter((it) => it.id !== itemId));
-      if (selectedItemDetail?.id === itemId) {
-        setSelectedItemDetail(null);
-      }
-    } catch (e) {
-      console.error("Failed to delete item", e);
-    }
+    const item = items.find((i) => i.id === itemId);
+    promptDeleteItem(itemId, item?.title || "this item");
   };
 
   const handleCreateManualItem = async (e: React.FormEvent) => {
@@ -395,8 +561,51 @@ export default function LibraryPage() {
       setNewSubcategory("");
       setNewDirectUrl("");
       setNewOverview("");
+      showToast(`"${created.title}" added to your library!`);
     } catch (err) {
-      alert("Failed to create item: " + String(err));
+      showToast("Failed to create item: " + (err instanceof Error ? err.message : String(err)), "error");
+    }
+  };
+
+  const handleOpenEdit = (item: LibraryItem) => {
+    setEditingItem(item);
+    setEditTitle(item.title);
+    setEditCreator(item.creator || "");
+    setEditType(item.content_type);
+    setEditSubcategory(item.subcategory || "");
+    setEditDirectUrl(item.direct_url || "");
+    setEditStatus(item.consumption_status);
+    setEditOverview(item.overview || "");
+    setEditRating(item.user_rating || 0);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingItem || !editTitle.trim()) return;
+
+    setIsUpdating(true);
+    try {
+      const updated = await updateLibraryItem(editingItem.id, {
+        title: editTitle.trim(),
+        creator: editCreator.trim() || undefined,
+        content_type: editType,
+        subcategory: editSubcategory.trim() || undefined,
+        direct_url: editDirectUrl.trim() || undefined,
+        consumption_status: editStatus,
+        overview: editOverview.trim() || undefined,
+        user_rating: editRating > 0 ? editRating : undefined,
+        verification_status: "verified",
+      });
+      setItems((prev) => prev.map((it) => (it.id === editingItem.id ? updated : it)));
+      if (selectedItemDetail?.id === editingItem.id) {
+        setSelectedItemDetail((prev) => (prev ? { ...prev, ...updated } : null));
+      }
+      setEditingItem(null);
+      showToast(`"${updated.title}" updated successfully.`);
+    } catch (err) {
+      showToast("Failed to update item: " + (err instanceof Error ? err.message : String(err)), "error");
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -472,18 +681,46 @@ export default function LibraryPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex">
-      <Sidebar health={health} />
+    <AuthGuard featureName="My Media Library">
+      <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex">
+      <Sidebar health={health} onOpenUpload={() => setIsUploadOpen(true)} />
 
       <div className="flex-1 flex flex-col min-w-0">
         <Header
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          onOpenUpload={() => router.push("/upload")}
+          onOpenUpload={() => setIsUploadOpen(true)}
           onOpenAskAI={() => setIsAskAIOpen(true)}
         />
 
         <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6">
+          {/* Toast Notification */}
+          {toast && (
+            <div
+              className={`p-4 rounded-2xl border flex items-center justify-between text-sm transition-all duration-300 shadow-md ${
+                toast.type === "success"
+                  ? "bg-emerald-50 border-emerald-300 text-emerald-900"
+                  : "bg-rose-50 border-rose-300 text-rose-900"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                {toast.type === "success" ? (
+                  <CheckCircle2 className="h-5 w-5 text-emerald-700" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-rose-600" />
+                )}
+                <span className="font-semibold">{toast.message}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setToast(null)}
+                className="text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+
           {/* Header & Primary Actions */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-stone-200">
             <div>
@@ -505,8 +742,8 @@ export default function LibraryPage() {
               </button>
 
               <button
-                onClick={() => router.push("/upload")}
-                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-all shadow-sm active:scale-95"
+                onClick={() => setIsUploadOpen(true)}
+                className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-all shadow-sm active:scale-95 cursor-pointer"
               >
                 <ImageIcon className="h-4 w-4" />
                 <span>Add from Screenshot</span>
@@ -646,14 +883,16 @@ export default function LibraryPage() {
                 <BookOpen className="h-7 w-7" />
               </div>
               <div className="max-w-md mx-auto space-y-1">
-                <h3 className="text-lg font-bold text-stone-900">Your library shelf is ready</h3>
+                <h3 className="text-lg font-bold text-stone-900">
+                  Your library shelf is ready
+                </h3>
                 <p className="text-sm text-stone-600">
                   Take a screenshot of any book cover, YouTube video, or movie poster and drop it here. MediaMind will organize it and give you the direct link.
                 </p>
               </div>
               <button
-                onClick={() => router.push("/upload")}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-sm transition-all"
+                onClick={() => setIsUploadOpen(true)}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-sm transition-all cursor-pointer"
               >
                 <Plus className="h-4 w-4 stroke-[3]" />
                 <span>Add Your First Screenshot</span>
@@ -664,10 +903,11 @@ export default function LibraryPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {items.map((item) => {
                 const badge = getTypeBadge(item.content_type);
+
                 return (
                   <div
                     key={item.id}
-                    className="bg-white rounded-2xl border border-stone-200 p-5 shadow-sm hover:shadow-md hover:border-amber-400 transition-all flex flex-col justify-between group space-y-4"
+                    className="bg-white rounded-2xl border border-stone-200 hover:border-amber-400 p-5 shadow-sm hover:shadow-md transition-all flex flex-col justify-between group space-y-4"
                   >
                     <div>
                       {/* Top Badges */}
@@ -694,6 +934,19 @@ export default function LibraryPage() {
                         />
                       </div>
 
+                      {/* Real Cover Photo / Focused Thumbnail with Fail-Safe Screenshot Fallback */}
+                      <MediaItemThumbnail
+                        item={item}
+                        onInspect={() =>
+                          setViewerImage({
+                            url: item.screenshot_url || item.cover_image_url || "",
+                            title: item.title,
+                          })
+                        }
+                        viewMode="grid"
+                        badge={badge}
+                      />
+
                       {/* Title & Creator */}
                       <h4
                         onClick={() => handleOpenDetail(item)}
@@ -714,7 +967,7 @@ export default function LibraryPage() {
                       )}
                     </div>
 
-                    {/* Direct Link Button (Prominent & Usable by any age) */}
+                    {/* Direct Link Button */}
                     <div className="space-y-3 pt-2 border-t border-stone-100">
                       {item.direct_url ? (
                         <a
@@ -742,7 +995,7 @@ export default function LibraryPage() {
                               <button
                                 key={starVal}
                                 onClick={() => handleRatingChange(item.id, starVal * 2)}
-                                className="p-0.5 hover:scale-110 transition-transform"
+                                className="p-0.5 hover:scale-110 transition-transform cursor-pointer"
                                 title={`Rate ${starVal * 2}/10`}
                               >
                                 <Star
@@ -759,16 +1012,31 @@ export default function LibraryPage() {
 
                         <div className="flex items-center gap-1">
                           <button
-                            onClick={() => handleOpenDetail(item)}
-                            title="Inspect details & screenshots"
-                            className="p-1.5 rounded-lg text-stone-500 hover:text-stone-900 hover:bg-stone-100 transition-colors"
+                            type="button"
+                            onClick={() => handleOpenEdit(item)}
+                            title="Edit details"
+                            className="p-1.5 rounded-lg text-stone-500 hover:text-stone-900 hover:bg-stone-100 transition-colors cursor-pointer"
+                          >
+                            <Edit3 className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setViewerImage({
+                                url: item.screenshot_url || item.cover_image_url || "",
+                                title: item.title,
+                              })
+                            }
+                            title="Inspect screenshot"
+                            className="p-1.5 rounded-lg text-stone-500 hover:text-stone-900 hover:bg-stone-100 transition-colors cursor-pointer"
                           >
                             <ImageIcon className="h-4 w-4" />
                           </button>
                           <button
+                            type="button"
                             onClick={() => handleDeleteItem(item.id)}
                             title="Remove from library"
-                            className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -784,15 +1052,26 @@ export default function LibraryPage() {
             <div className="rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100 overflow-hidden shadow-sm">
               {items.map((item) => {
                 const badge = getTypeBadge(item.content_type);
+
                 return (
                   <div
                     key={item.id}
                     className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-stone-50/80 transition-colors"
                   >
                     <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                      <div className={`p-2.5 rounded-xl border shrink-0 ${badge.bg}`}>
-                        {badge.icon}
-                      </div>
+                      {/* Real Photo Thumbnail */}
+                      <MediaItemThumbnail
+                        item={item}
+                        onInspect={() =>
+                          setViewerImage({
+                            url: item.screenshot_url || item.cover_image_url || "",
+                            title: item.title,
+                          })
+                        }
+                        viewMode="list"
+                        badge={badge}
+                      />
+
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span
@@ -814,13 +1093,13 @@ export default function LibraryPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-3 shrink-0 self-end md:self-auto">
+                    <div className="flex items-center gap-2.5 shrink-0 self-end md:self-auto flex-wrap">
                       {item.direct_url && (
                         <a
                           href={item.direct_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition-colors"
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition-colors"
                         >
                           <span>Open Link</span>
                           <ExternalLink className="h-3 w-3" />
@@ -837,8 +1116,19 @@ export default function LibraryPage() {
                       />
 
                       <button
+                        type="button"
+                        onClick={() => handleOpenEdit(item)}
+                        title="Edit details"
+                        className="p-1.5 rounded-lg text-stone-400 hover:text-stone-800 hover:bg-stone-100 transition-colors cursor-pointer"
+                      >
+                        <Edit3 className="h-4 w-4" />
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={() => handleDeleteItem(item.id)}
-                        className="p-1.5 rounded text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                        title="Remove from library"
+                        className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
                       >
                         <Trash2 className="h-4 w-4" />
                       </button>
@@ -973,6 +1263,195 @@ export default function LibraryPage() {
         </div>
       )}
 
+      {/* Quick Edit Modal */}
+      {editingItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className="bg-white border border-stone-200 rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+              <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
+                <Edit3 className="h-5 w-5 text-amber-600" />
+                <span>Edit Library Item</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingItem(null)}
+                className="p-1 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                  Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="e.g. Atomic Habits, Inception, or Python Tutorial"
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-sm text-stone-900 focus:outline-none focus:border-amber-600 focus:bg-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                    Author / Creator
+                  </label>
+                  <input
+                    type="text"
+                    value={editCreator}
+                    onChange={(e) => setEditCreator(e.target.value)}
+                    placeholder="e.g. James Clear"
+                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-sm text-stone-900 focus:outline-none focus:border-amber-600 focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                    Category
+                  </label>
+                  <CustomSelect
+                    value={editType}
+                    onChange={(val) => setEditType(val as ContentType)}
+                    options={CONTENT_TYPE_SELECT_OPTIONS}
+                    size="md"
+                    className="w-full"
+                    buttonClassName="w-full"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                    Subcategory / Topic
+                  </label>
+                  <input
+                    type="text"
+                    value={editSubcategory}
+                    onChange={(e) => setEditSubcategory(e.target.value)}
+                    placeholder="e.g. Psychology, Habits, Money"
+                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-sm text-stone-900 focus:outline-none focus:border-amber-600 focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                    Status
+                  </label>
+                  <CustomSelect
+                    value={editStatus}
+                    onChange={(val) => setEditStatus(val as ConsumptionStatus)}
+                    options={CARD_STATUS_OPTIONS}
+                    size="md"
+                    className="w-full"
+                    buttonClassName="w-full"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                  Direct Web Link
+                </label>
+                <input
+                  type="url"
+                  value={editDirectUrl}
+                  onChange={(e) => setEditDirectUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-sm text-stone-900 focus:outline-none focus:border-amber-600 focus:bg-white"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                  My Rating
+                </label>
+                <div className="flex items-center gap-1.5 py-1">
+                  {[1, 2, 3, 4, 5].map((starVal) => {
+                    const currentStars = editRating ? Math.round(editRating / 2) : 0;
+                    const isFilled = starVal <= currentStars;
+                    return (
+                      <button
+                        type="button"
+                        key={starVal}
+                        onClick={() => setEditRating(starVal * 2)}
+                        className="p-1 hover:scale-110 transition-transform cursor-pointer"
+                        title={`Rate ${starVal * 2}/10`}
+                      >
+                        <Star
+                          className={`h-5 w-5 ${
+                            isFilled
+                              ? "text-amber-500 fill-amber-500"
+                              : "text-stone-300 hover:text-amber-400"
+                          }`}
+                        />
+                      </button>
+                    );
+                  })}
+                  {editRating > 0 && (
+                    <span className="text-xs font-bold text-stone-600 ml-2">
+                      {editRating}/10
+                    </span>
+                  )}
+                  {editRating > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setEditRating(0)}
+                      className="text-xs text-stone-400 hover:text-stone-600 ml-1 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                  Notes / Overview
+                </label>
+                <textarea
+                  rows={3}
+                  value={editOverview}
+                  onChange={(e) => setEditOverview(e.target.value)}
+                  placeholder="Key thoughts, notes, or takeaways..."
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-sm text-stone-900 focus:outline-none focus:border-amber-600 focus:bg-white"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingItem(null)}
+                  disabled={isUpdating}
+                  className="px-4 py-2 rounded-xl text-stone-600 hover:text-stone-900 text-sm font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdating}
+                  className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  {isUpdating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Changes</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Detail & Evidence Drawer */}
       {selectedItemDetail && (
         <div className="fixed inset-y-0 right-0 z-50 w-full max-w-xl bg-white border-l border-stone-200 shadow-2xl p-6 overflow-y-auto space-y-6">
@@ -983,12 +1462,23 @@ export default function LibraryPage() {
               </span>
               <h2 className="text-xl font-bold text-stone-900 mt-0.5">{selectedItemDetail.title}</h2>
             </div>
-            <button
-              onClick={() => setSelectedItemDetail(null)}
-              className="p-1.5 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100"
-            >
-              <X className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => promptDeleteItem(selectedItemDetail.id, selectedItemDetail.title)}
+                className="p-1.5 rounded-xl text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                title="Delete item"
+              >
+                <Trash2 className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedItemDetail(null)}
+                className="p-1.5 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
           </div>
 
           {/* Details & Link */}
@@ -1090,7 +1580,8 @@ export default function LibraryPage() {
                     <div className="flex items-center justify-between text-xs text-stone-600 font-semibold">
                       <span className="truncate">{src.file_name}</span>
                       <button
-                        onClick={() => handleUnlinkSource(src.id)}
+                        type="button"
+                        onClick={() => promptUnlinkSource(src.id)}
                         className="text-stone-400 hover:text-rose-600 p-1 cursor-pointer"
                         title="Unlink"
                       >
@@ -1136,6 +1627,63 @@ export default function LibraryPage() {
         imageUrl={viewerImage?.url}
         title={viewerImage?.title}
       />
+
+      {/* Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteTarget}
+        onClose={() => {
+          if (!isDeleting) setDeleteTarget(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        title={
+          deleteTarget?.type === "item"
+            ? "Remove Item from Library?"
+            : "Unlink Screenshot?"
+        }
+        description={
+          deleteTarget?.type === "item" ? (
+            <div className="space-y-2">
+              <p>
+                Are you sure you want to remove{" "}
+                <span className="font-semibold text-stone-900">
+                  &lsquo;{deleteTarget.title}&rsquo;
+                </span>{" "}
+                from your library?
+              </p>
+              <p className="text-[11px] text-stone-500">
+                Your original screenshots remain safely preserved in your vault and can be reviewed again anytime.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p>
+                Are you sure you want to unlink this screenshot from{" "}
+                <span className="font-semibold text-stone-900">
+                  &lsquo;{deleteTarget?.title}&rsquo;
+                </span>
+                ?
+              </p>
+              <p className="text-[11px] text-stone-500">
+                The original screenshot will remain safely preserved in your vault.
+              </p>
+            </div>
+          )
+        }
+        confirmText={
+          deleteTarget?.type === "item" ? "Remove Item" : "Unlink Screenshot"
+        }
+        variant={deleteTarget?.type === "item" ? "danger" : "warning"}
+        icon={deleteTarget?.type === "item" ? "trash" : "unlink"}
+        isLoading={isDeleting}
+      />
+
+      {/* Quick Screenshot Upload Modal */}
+      <QuickUploadModal
+        isOpen={isUploadOpen}
+        onClose={() => setIsUploadOpen(false)}
+        onUploadSuccess={refreshItems}
+      />
     </div>
+    </AuthGuard>
   );
 }

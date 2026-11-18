@@ -1,6 +1,8 @@
+import json
 import os
-from typing import List
-from pydantic import Field, AliasChoices
+from pathlib import Path
+from typing import List, Union
+from pydantic import Field, AliasChoices, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,7 +34,7 @@ class Settings(BaseSettings):
     # Runtime AI (Gemini)
     GEMINI_API_KEY: str = Field(default="")
     GEMINI_RUNTIME_MODEL: str = Field(
-        default="gemini-3.5-flash",
+        default="gemini-3.1-flash-lite",
         validation_alias=AliasChoices("GEMINI_RUNTIME_MODEL", "GEMINI_MODEL_ID"),
         description="Canonical Gemini model identifier (supports legacy GEMINI_MODEL_ID alias)",
     )
@@ -75,6 +77,41 @@ class Settings(BaseSettings):
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+    @field_validator("BACKEND_CORS_ORIGINS", mode="before")
+    @classmethod
+    def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            if v.startswith("[") and v.endswith("]"):
+                try:
+                    return json.loads(v)
+                except Exception:
+                    pass
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        elif isinstance(v, (list, tuple)):
+            return list(v)
+        return v
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, v: str) -> str:
+        if isinstance(v, str) and v.startswith("postgres://"):
+            return v.replace("postgres://", "postgresql://", 1)
+        return v
+
+    @field_validator("LOCAL_STORAGE_PATH", mode="before")
+    @classmethod
+    def normalize_local_storage_path(cls, v: str) -> str:
+        if not v:
+            v = "./storage_data"
+        p = Path(v)
+        if not p.is_absolute():
+            repo_root = Path(__file__).resolve().parent.parent.parent.parent
+            return str((repo_root / v).resolve())
+        return str(p.resolve())
 
 
 settings = Settings()

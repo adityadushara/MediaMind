@@ -159,8 +159,87 @@ This document records the complete, chronological evolution of **MediaMind** fro
 * **Vercel Frontend Deployment**: Configured Next.js App Router for zero-config Vercel deployment with edge asset caching.
 * **Supabase Cloud Infrastructure**: Versioned migrations `001` through `007` tested and verified for Supabase PostgreSQL with RLS and `pgvector`.
 * **Render / Railway / Fly.io Backend Deployment**: Unified runner `python BE/run.py` ready for containerized or native process management with automatic virtualenv detection and health check monitoring.
+* **Production Hardening Fixes**:
+  * **CORS Config Resiliency**: Added robust CSV and JSON string parsing for `BACKEND_CORS_ORIGINS` in Pydantic v2 settings, eliminating startup crashes when setting comma-separated frontend URLs on cloud dashboards.
+  * **Database Scheme Auto-Normalization**: Automatically converts legacy `postgres://` connection strings (commonly copied from Supabase/Heroku) into `postgresql://` for SQLAlchemy 2.0 and psycopg2, and prevents silent local SQLite fallbacks in production.
+  * **Migration Completeness**: Added `migrations/007_add_article_and_newsletter_types.sql` to automated migration runner `BE/scripts/apply_migrations.py`.
+  * **Dynamic Port & Host Binding**: Enhanced `BE/run.py` to automatically detect cloud-assigned `$PORT` and `$HOST` (listening on `0.0.0.0:$PORT` in containers).
+  * **Frontend Auth Token Forwarding**: Updated `FE/src/lib/api.ts` to automatically extract Supabase session access tokens and attach `Authorization: Bearer <token>` to all API requests when configured.
+  * **Production Containerization**: Created production `BE/Dockerfile`, `FE/Dockerfile`, `BE/Procfile`, `.dockerignore`, and root `docker-compose.yml` for 1-click deployments.
+
+---
+
+### Milestone M9: Supabase Authentication (Sign In / Sign Up) Integration
+* **Reactive Authentication Context (`FE/src/context/AuthContext.tsx`)**:
+  * Global `AuthProvider` providing `user`, `session`, `signIn`, `signUp`, and `signOut`.
+  * Real-time session synchronization using Supabase `onAuthStateChange` and `getSession`.
+  * Resilient fallbacks for local development when credentials are placeholder values.
+* **Quick Auth Modal (`FE/src/components/auth/AuthModal.tsx`)**:
+  * Seamless modal accessible anywhere via Header and Sidebar without page navigation.
+  * Instant switching between "Sign In" and "Create Account".
+  * Password visibility toggle, minimum length validation, inline error banners, and email confirmation notices.
+* **Dedicated Authentication Routes (`/login`, `/signup`)**:
+  * Standalone `/login` and `/signup` pages for direct bookmarking or protected route redirection.
+* **Header & Sidebar User Profile Integration**:
+  * Header displays user avatar initials, user name/email, and a popover dropdown with account status and a "Sign Out" button.
+  * Sidebar bottom profile card dynamically reflects the active Supabase user with instant 1-click Sign In / Sign Out controls.
+* **API Gateway Authorization Injection**:
+  * All REST API requests through `FE/src/lib/api.ts` automatically forward `Authorization: Bearer <token>` when a Supabase session exists.
 
 
+
+### Direct Account Creation & Instant Login (Email Confirmation Bypass)
+* **Problem**: Supabase Auth projects enable "Confirm email" by default, causing new accounts to be created in an unconfirmed state with no active session and throwing `Email not confirmed` upon sign-in.
+* **Root Cause & Resolution**:
+  * **Frontend Direct Auto-Login (`FE/src/context/AuthContext.tsx`, `FE/src/app/login/page.tsx`, `FE/src/components/auth/AuthModal.tsx`)**:
+    * Removed obsolete notices prompting users to check their email inbox to confirm their account.
+    * When an account is created, `AuthContext.signUp` immediately attempts direct sign-in if the session is not returned directly, authenticating the user and granting instant access to their media library without an email verification round-trip.
+    * Added clear, actionable error handling that identifies `Email not confirmed` and instructs the developer/user to toggle off "Confirm email" in Supabase Dashboard.
+  * **Database Auto-Confirmation Migration (`migrations/008_auto_confirm_users.sql`)**:
+    * Auto-confirms any existing accounts where `email_confirmed_at IS NULL`.
+    * Creates a `BEFORE INSERT` trigger function `public.auto_confirm_new_user()` on `auth.users` ensuring any new account created in PostgreSQL is automatically marked confirmed.
+  * **Automated Migration Runner**:
+    * Registered `008_auto_confirm_users.sql` in `BE/scripts/apply_migrations.py`.
+  * **Testing & Verification**:
+    * Added unit tests in `FE/src/__tests__/auth.test.tsx` verifying instant sign-up without email confirmation requirement and graceful error guidance.
+    * All 14 frontend Vitest tests passed.
+    * Next.js production build (`pnpm build`) passed across 11 routes with zero TypeScript errors.
+* **Identified Root Causes**:
+  * `LOCAL_STORAGE_PATH`: Defined as relative `./storage_data`, leading to divergent path resolution depending on whether the process was launched from repo root or `BE/`.
+  * **AVIF & WebP Content-Type Mismatch**: `serve_local_media` returned `image/jpeg` regardless of actual file format, causing modern browsers to reject AVIF/WebP rendering.
+  * **Missing AVIF Decoder**: OpenCV builds omit AVIF support; Pillow required `pillow-heif` registration (`register_heif_opener()`) for native AVIF decoding.
+* **Fixes Delivered**:
+  * Pydantic validator `normalize_local_storage_path` in `BE/app/core/config.py` anchors storage to canonical repo root.
+  * Dual-path resolution fallback in `LocalStorageAdapter` and `serve_local_media` to locate assets under either root or `BE/storage_data`.
+  * Proper MIME mapping (`image/avif`, `image/webp`, `image/png`, `image/jpeg`) in `assets.py`.
+  * Installed `pillow-heif>=0.18.0` and registered opener at startup across `main.py`, `cv_service.py`, and `assets.py`.
+  * Populated user source assets and regenerated high-resolution JPEG derivative crops for test records.
+  * Added fallback thumbnail UI in `FE/src/app/upload/page.tsx` and retry control in `FE/src/components/ui/ImageViewerModal.tsx`.
+
+### Public Landing Page, Feature Auth Guards & Direct Library Thumbnails
+* **Public Product Landing Page (`/`)**:
+  * Implemented [FE/src/components/landing/LandingPage.tsx](file:///D:/projects/MediaMind/FE/src/components/landing/LandingPage.tsx) explaining MediaMind's 3-step screenshot-to-library transformation, supported media categories, RAG AI demo, and trust guarantees.
+  * Dynamically served at root `/`: unauthenticated visitors see the product landing page with Sign In & Get Started CTAs; authenticated users access the live dashboard.
+* **Feature Authentication Guard (`AuthGuard`)**:
+  * Built [FE/src/components/auth/AuthGuard.tsx](file:///D:/projects/MediaMind/FE/src/components/auth/AuthGuard.tsx) and wrapped `/upload`, `/review`, `/library`, and `/sources`.
+  * Unauthenticated users cannot access or use any workspace features without signing in; clicking header/sidebar action triggers opens the authentication dialog.
+* **Real Photos & Thumbnails on Library Cards**:
+  * Updated [FE/src/app/library/page.tsx](file:///D:/projects/MediaMind/FE/src/app/library/page.tsx) grid and list views with real cover photos / focused crop thumbnails displayed directly on each card with zoom inspector and clean fallbacks.
+  * Updated [BE/app/api/v1/library.py](file:///D:/projects/MediaMind/BE/app/api/v1/library.py) and [BE/app/api/v1/reviews.py](file:///D:/projects/MediaMind/BE/app/api/v1/reviews.py) to dynamically populate `cover_image_url` from linked source derivative crops if provider cover art is absent.
+
+### Custom Accessible Confirmation Popups & Toast Feedback
+* **Problem**: Destructive actions (deleting library items, unlinking source screenshots, deleting screenshots from vault) and system errors used native browser dialogs (`window.confirm(...)` and `window.alert(...)`), causing unstyled, disruptive browser popup boxes.
+* **Fix Delivered**:
+  * **Custom Confirmation Modal (`FE/src/components/ui/ConfirmModal.tsx`)**:
+    * Clean, accessible modal dialog with backdrop blur, smooth entrance animations, and escape/backdrop dismiss handlers.
+    * Distinctive badge icons (`Trash2`, `Unlink`, `AlertTriangle`) with variant styling (`danger`, `warning`, `default`).
+    * Clear context-rich descriptions (e.g., reminding users that original screenshot vault evidence remains safe when deleting library entries).
+    * Dual action buttons with loading spinners (`Loader2`) and disabled states during active deletion requests.
+  * **Clean Toast Notification Feedback**:
+    * Replaced all occurrences of `alert(...)` with animated floating toast notifications across `/library`, `/sources`, `/upload`, and `/review`.
+  * **Unit Tests & Verification**:
+    * Added comprehensive unit test suite in `FE/src/__tests__/confirm_modal.test.tsx` verifying open/close cycles, cancel/confirm actions, escape key handling, and loading states.
+    * All 20 frontend Vitest tests passed.
 
 ---
 
@@ -183,8 +262,9 @@ This document records the complete, chronological evolution of **MediaMind** fro
 | External Provider Adapters | `test_provider_adapters.py` | 7 tests | ✅ Passed |
 | Human Review Queue API | `test_reviews_api.py` | 5 tests | ✅ Passed |
 | Enterprise RAG Engine | `test_rag.py` | 2 tests | ✅ Passed |
+| Security & Config Audit | `test_security.py` | 6 tests | ✅ Passed |
 | Storage Adapters | `test_storage.py` | 2 tests | ✅ Passed |
 | Background Worker Runner | `test_worker.py` | 5 tests | ✅ Passed |
-| **Total Backend Tests** | | **107 Tests** | **100% Passed** |
-| **Frontend Vitest Tests** | `upload.test.tsx`, `review.test.tsx` | **5 Tests** | **100% Passed** |
-| **Next.js Production Build** | `next build` (Turbopack) | **6 Routes** | **100% Passed** |
+| **Total Backend Tests** | | **109 Tests** | **100% Passed (107 passed, 2 live skipped)** |
+| **Frontend Vitest Tests** | `auth.test.tsx`, `upload.test.tsx`, `review.test.tsx`, `landing.test.tsx` | **11 Tests** | **100% Passed** |
+| **Next.js Production Build** | `next build` (Turbopack) | **11 Routes** | **100% Passed** |
