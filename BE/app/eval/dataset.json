@@ -1,0 +1,320 @@
+[
+  {
+    "id": "tc_001_single_book",
+    "category": "book",
+    "description": "Clear single book cover (Designing Data-Intensive Applications)",
+    "expected_items": [
+      {
+        "title": "Designing Data-Intensive Applications",
+        "creator": "Martin Kleppmann",
+        "content_type": "book",
+        "expected_bbox": {
+          "x_min": 100,
+          "y_min": 100,
+          "x_max": 900,
+          "y_max": 900
+        },
+        "requires_uncertainty": false
+      }
+    ]
+  },
+  {
+    "id": "tc_002_youtube_multi_video",
+    "category": "youtube_video",
+    "description": "YouTube playlist screenshot containing two distinct video entries",
+    "expected_items": [
+      {
+        "title": "Building Production RAG Systems with Postgres",
+        "creator": "Fireship",
+        "content_type": "youtube_video",
+        "expected_bbox": {
+          "x_min": 50,
+          "y_min": 100,
+          "x_max": 950,
+          "y_max": 450
+        },
+        "requires_uncertainty": false
+      },
+      {
+        "title": "Why Python 3.13 Changes Everything",
+        "creator": "Fireship",
+        "content_type": "youtube_video",
+        "expected_bbox": {
+          "x_min": 50,
+          "y_min": 500,
+          "x_max": 950,
+          "y_max": 850
+        },
+        "requires_uncertainty": false
+      }
+    ]
+  },
+  {
+    "id": "tc_003_podcast_episode",
+    "category": "podcast",
+    "description": "Podcast app episode detail with title, host, and episode summary",
+    "expected_items": [
+      {
+        "title": "How to Build Focus and Mental Toughness",
+        "creator": "Andrew Huberman",
+        "content_type": "podcast",
+        "expected_bbox": {
+          "x_min": 80,
+          "y_min": 150,
+          "x_max": 500,
+          "y_max": 650
+        },
+        "requires_uncertainty": false
+      }
+    ]
+  },
+  {
+    "id": "tc_004_non_media_noise_spreadsheet",
+    "category": "noise",
+    "description": "A spreadsheet screenshot containing financial tables with no media items",
+    "expected_items": []
+  },
+  {
+    "id": "tc_005_partial_cutoff",
+    "category": "movie",
+    "description": "Movie poster partially obstructed at bottom edge",
+    "expected_items": [
+      {
+        "title": "Interstellar",
+        "creator": "Christopher Nolan",
+        "content_type": "movie",
+        "expected_bbox": {
+          "x_min": 150,
+          "y_min": 100,
+          "x_max": 850,
+          "y_max": 980
+        },
+        "requires_uncertainty": true
+      }
+    ]
+  },
+  {
+    "id": "tc_006_movie_posters_collage",
+    "category": "movie",
+    "description": "Collage of three movie posters side by side",
+    "expected_items": [
+      {
+        "title": "Oppenheimer",
+        "creator": "Christopher Nolan",
+        "content_type": "movie",
+        "expected_bbox": {
+          "x_min": 20,
+          "y_min": 100,
+          "x_max": 320,
+          "y_max": 900
+        },
+        "requires_uncertainty": false
+      },
+      {
+        "title": "Dune: Part Two",
+        "creator": "Denis Villeneuve",
+        "content_type": "movie",
+        "expected_bbox": {
+          "x_min": 350,
+          "y_min": 100,
+          "x_max": 650,
+          "y_max": 900
+        },
+        "requires_uncertainty": false
+      },
+      {
+        "title": "Blade Runner 2049",
+        "creator": "Denis Villeneuve",
+        "content_type": "movie",
+        "expected_bbox": {
+          "x_min": 680,
+          "y_min": 100,
+          "x_max": 980,
+          "y_max": 900
+        },
+        "requires_uncertainty": false
+      }
+    ]
+  },
+  {
+    "id": "tc_007_tv_show_season_grid",
+    "category": "tv_show",
+    "description": "Streaming service browse grid displaying multiple TV series",
+    "expected_items": [
+      {
+        "title": "Succession",
+        "creator": "Jesse Armstrong",
+        "content_type": "tv_show",
+        "expected_bbox": {
+          "x_min": 40,
+          "y_min": 120,
+          "x_max": 480,
+          "y_max": 880
+        },
+        "requires_uncertainty": false
+      },
+      {
+        "title": "The Bear",
+        "creator": "Christopher Storer",
+        "content_type": "tv_show",
+        "expected_bbox": {
+          "x_min": 520,
+          "y_min": 120,
+          "x_max": 960,
+          "y_max": 880
+        },
+        "requires_uncertainty": false
+      }
+    ]
+  },
+  {
+    "id": "tc_008_online_course_catalog",
+    "category": "course",
+    "description": "Course catalog page with two technical courses",
+    "expected_items": [
+      {
+        "title": "Deep Learning Specialization",
+        "creator": "Andrew Ng",
+        "content_type": "course",
+        "expected_bbox": {
+          "x_min": 50,
+          "y_min": 80,
+          "x_max": 950,
+          "y_max": 480
+        },
+        "requires_uncertainty": false
+      },
+      {
+        "title": "CS50: Introduction to Computer Science",
+        "creator": "David J. Malan",
+        "content_type": "course",
+        "expected_bbox": {
+          "x_min": 50,
+          "y_min": 520,
+          "x_max": 950,
+          "y_max": 920
+        },
+        "requires_uncertainty": false
+      }
+    ]
+  },
+  {
+    "id": "tc_009_poor_quality_blurred",
+    "category": "book",
+    "description": "Low-resolution blurred phone photo of a book cover with noisy glare",
+    "expected_items": [
+      {
+        "title": "Atomic Habits",
+        "creator": "James Clear",
+        "content_type": "book",
+        "expected_bbox": {
+          "x_min": 120,
+          "y_min": 150,
+          "x_max": 880,
+          "y_max": 850
+        },
+        "requires_uncertainty": true
+      }
+    ]
+  },
+  {
+    "id": "tc_010_non_media_noise_code_terminal",
+    "category": "noise",
+    "description": "IDE screen with Python code editor and terminal output (zero media items)",
+    "expected_items": []
+  },
+  {
+    "id": "tc_011_documentary_feature",
+    "category": "documentary",
+    "description": "Documentary streaming detail card with narrator and synopsis",
+    "expected_items": [
+      {
+        "title": "Planet Earth III",
+        "creator": "David Attenborough",
+        "content_type": "documentary",
+        "expected_bbox": {
+          "x_min": 100,
+          "y_min": 100,
+          "x_max": 900,
+          "y_max": 800
+        },
+        "requires_uncertainty": false
+      }
+    ]
+  },
+  {
+    "id": "tc_012_unusual_horizontal_banner",
+    "category": "movie",
+    "description": "Wide panoramic banner ad for a film release",
+    "expected_items": [
+      {
+        "title": "Arrival",
+        "creator": "Denis Villeneuve",
+        "content_type": "movie",
+        "expected_bbox": {
+          "x_min": 50,
+          "y_min": 300,
+          "x_max": 950,
+          "y_max": 700
+        },
+        "requires_uncertainty": false
+      }
+    ]
+  },
+  {
+    "id": "tc_013_mixed_media_feed",
+    "category": "mixed",
+    "description": "Mixed social feed displaying both a book recommendation and a podcast link",
+    "expected_items": [
+      {
+        "title": "Thinking, Fast and Slow",
+        "creator": "Daniel Kahneman",
+        "content_type": "book",
+        "expected_bbox": {
+          "x_min": 50,
+          "y_min": 60,
+          "x_max": 480,
+          "y_max": 920
+        },
+        "requires_uncertainty": false
+      },
+      {
+        "title": "The Knowledge Project",
+        "creator": "Shane Parrish",
+        "content_type": "podcast",
+        "expected_bbox": {
+          "x_min": 520,
+          "y_min": 60,
+          "x_max": 950,
+          "y_max": 920
+        },
+        "requires_uncertainty": false
+      }
+    ]
+  },
+  {
+    "id": "tc_014_dark_mode_low_contrast",
+    "category": "book",
+    "description": "Dark mode screenshot of an e-reader with subtle gray-on-black typography",
+    "expected_items": [
+      {
+        "title": "Clean Code",
+        "creator": "Robert C. Martin",
+        "content_type": "book",
+        "expected_bbox": {
+          "x_min": 100,
+          "y_min": 80,
+          "x_max": 900,
+          "y_max": 920
+        },
+        "requires_uncertainty": true
+      }
+    ]
+  },
+  {
+    "id": "tc_015_non_media_noise_blank_wallpaper",
+    "category": "noise",
+    "description": "Abstract desktop wallpaper with colorful gradient geometry and no text",
+    "expected_items": []
+  }
+]

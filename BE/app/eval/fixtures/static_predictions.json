@@ -1,0 +1,308 @@
+[
+  {
+    "id": "tc_001_single_book",
+    "candidates": [
+      {
+        "title": "Designing Data-Intensive Applications",
+        "creator": "Martin Kleppmann",
+        "content_type": "book",
+        "confidence": 0.96,
+        "bounding_box": {"x_min": 105, "y_min": 102, "x_max": 895, "y_max": 898},
+        "uncertainty_reasons": []
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1240,
+      "output_tokens": 185,
+      "cost_usd": 0.000835,
+      "latency_ms": 412.0
+    }
+  },
+  {
+    "id": "tc_002_youtube_multi_video",
+    "candidates": [
+      {
+        "title": "Building Production RAG Systems with Postgres",
+        "creator": "Fireship",
+        "content_type": "youtube_video",
+        "confidence": 0.94,
+        "bounding_box": {"x_min": 52, "y_min": 104, "x_max": 948, "y_max": 448},
+        "uncertainty_reasons": []
+      },
+      {
+        "title": "Why Python 3.13 Changes Everything",
+        "creator": "Fireship",
+        "content_type": "youtube_video",
+        "confidence": 0.95,
+        "bounding_box": {"x_min": 54, "y_min": 504, "x_max": 946, "y_max": 846},
+        "uncertainty_reasons": []
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1310,
+      "output_tokens": 280,
+      "cost_usd": 0.001093,
+      "latency_ms": 520.0
+    }
+  },
+  {
+    "id": "tc_003_podcast_episode",
+    "candidates": [
+      {
+        "title": "How to Build Focus and Mental Toughness",
+        "creator": "Andrew Huberman",
+        "content_type": "podcast",
+        "confidence": 0.93,
+        "bounding_box": {"x_min": 82, "y_min": 155, "x_max": 495, "y_max": 645},
+        "uncertainty_reasons": []
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1220,
+      "output_tokens": 190,
+      "cost_usd": 0.000841,
+      "latency_ms": 395.0
+    }
+  },
+  {
+    "id": "tc_004_non_media_noise_spreadsheet",
+    "candidates": [],
+    "telemetry": {
+      "input_tokens": 1150,
+      "output_tokens": 45,
+      "cost_usd": 0.000458,
+      "latency_ms": 310.0
+    }
+  },
+  {
+    "id": "tc_005_partial_cutoff",
+    "candidates": [
+      {
+        "title": "Interstellar",
+        "creator": "Christopher Nolan",
+        "content_type": "movie",
+        "confidence": 0.81,
+        "bounding_box": {"x_min": 155, "y_min": 105, "x_max": 845, "y_max": 970},
+        "uncertainty_reasons": ["Poster credits obstructed at bottom edge"]
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1280,
+      "output_tokens": 210,
+      "cost_usd": 0.000909,
+      "latency_ms": 440.0
+    }
+  },
+  {
+    "id": "tc_006_movie_posters_collage",
+    "candidates": [
+      {
+        "title": "Oppenheimer",
+        "creator": "Christopher Nolan",
+        "content_type": "movie",
+        "confidence": 0.96,
+        "bounding_box": {"x_min": 24, "y_min": 102, "x_max": 318, "y_max": 895},
+        "uncertainty_reasons": []
+      },
+      {
+        "title": "Dune: Part Two",
+        "creator": "Denis Villeneuve",
+        "content_type": "movie",
+        "confidence": 0.95,
+        "bounding_box": {"x_min": 354, "y_min": 102, "x_max": 646, "y_max": 896},
+        "uncertainty_reasons": []
+      },
+      {
+        "title": "Blade Runner 2049",
+        "creator": "Denis Villeneuve",
+        "content_type": "movie",
+        "confidence": 0.94,
+        "bounding_box": {"x_min": 684, "y_min": 103, "x_max": 976, "y_max": 897},
+        "uncertainty_reasons": []
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1450,
+      "output_tokens": 390,
+      "cost_usd": 0.001410,
+      "latency_ms": 610.0
+    }
+  },
+  {
+    "id": "tc_007_tv_show_season_grid",
+    "candidates": [
+      {
+        "title": "Succession",
+        "creator": "Jesse Armstrong",
+        "content_type": "tv_show",
+        "confidence": 0.96,
+        "bounding_box": {"x_min": 44, "y_min": 124, "x_max": 476, "y_max": 876},
+        "uncertainty_reasons": []
+      },
+      {
+        "title": "The Bear",
+        "creator": "Christopher Storer",
+        "content_type": "tv_show",
+        "confidence": 0.94,
+        "bounding_box": {"x_min": 524, "y_min": 124, "x_max": 956, "y_max": 876},
+        "uncertainty_reasons": []
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1320,
+      "output_tokens": 275,
+      "cost_usd": 0.001084,
+      "latency_ms": 490.0
+    }
+  },
+  {
+    "id": "tc_008_online_course_catalog",
+    "candidates": [
+      {
+        "title": "Deep Learning Specialization",
+        "creator": "Andrew Ng",
+        "content_type": "course",
+        "confidence": 0.97,
+        "bounding_box": {"x_min": 52, "y_min": 82, "x_max": 948, "y_max": 478},
+        "uncertainty_reasons": []
+      },
+      {
+        "title": "CS50: Introduction to Computer Science",
+        "creator": "David J. Malan",
+        "content_type": "course",
+        "confidence": 0.96,
+        "bounding_box": {"x_min": 52, "y_min": 522, "x_max": 948, "y_max": 918},
+        "uncertainty_reasons": []
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1340,
+      "output_tokens": 290,
+      "cost_usd": 0.001127,
+      "latency_ms": 510.0
+    }
+  },
+  {
+    "id": "tc_009_poor_quality_blurred",
+    "candidates": [
+      {
+        "title": "Atomic Habits",
+        "creator": "James Clear",
+        "content_type": "book",
+        "confidence": 0.78,
+        "bounding_box": {"x_min": 125, "y_min": 155, "x_max": 875, "y_max": 845},
+        "uncertainty_reasons": ["Image exhibits motion blur and high-frequency glare"]
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1260,
+      "output_tokens": 200,
+      "cost_usd": 0.000878,
+      "latency_ms": 465.0
+    }
+  },
+  {
+    "id": "tc_010_non_media_noise_code_terminal",
+    "candidates": [],
+    "telemetry": {
+      "input_tokens": 1180,
+      "output_tokens": 40,
+      "cost_usd": 0.000454,
+      "latency_ms": 295.0
+    }
+  },
+  {
+    "id": "tc_011_documentary_feature",
+    "candidates": [
+      {
+        "title": "Planet Earth III",
+        "creator": "David Attenborough",
+        "content_type": "documentary",
+        "confidence": 0.95,
+        "bounding_box": {"x_min": 105, "y_min": 105, "x_max": 895, "y_max": 795},
+        "uncertainty_reasons": []
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1250,
+      "output_tokens": 195,
+      "cost_usd": 0.000863,
+      "latency_ms": 420.0
+    }
+  },
+  {
+    "id": "tc_012_unusual_horizontal_banner",
+    "candidates": [
+      {
+        "title": "Arrival",
+        "creator": "Denis Villeneuve",
+        "content_type": "movie",
+        "confidence": 0.93,
+        "bounding_box": {"x_min": 55, "y_min": 305, "x_max": 945, "y_max": 695},
+        "uncertainty_reasons": []
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1230,
+      "output_tokens": 185,
+      "cost_usd": 0.000832,
+      "latency_ms": 405.0
+    }
+  },
+  {
+    "id": "tc_013_mixed_media_feed",
+    "candidates": [
+      {
+        "title": "Thinking, Fast and Slow",
+        "creator": "Daniel Kahneman",
+        "content_type": "book",
+        "confidence": 0.94,
+        "bounding_box": {"x_min": 54, "y_min": 64, "x_max": 476, "y_max": 916},
+        "uncertainty_reasons": []
+      },
+      {
+        "title": "The Knowledge Project",
+        "creator": "Shane Parrish",
+        "content_type": "podcast",
+        "confidence": 0.92,
+        "bounding_box": {"x_min": 525, "y_min": 65, "x_max": 945, "y_max": 915},
+        "uncertainty_reasons": []
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1350,
+      "output_tokens": 295,
+      "cost_usd": 0.001143,
+      "latency_ms": 530.0
+    }
+  },
+  {
+    "id": "tc_014_dark_mode_low_contrast",
+    "candidates": [
+      {
+        "title": "Clean Code",
+        "creator": "Robert C. Martin",
+        "content_type": "book",
+        "confidence": 0.83,
+        "bounding_box": {"x_min": 105, "y_min": 85, "x_max": 895, "y_max": 915},
+        "uncertainty_reasons": ["Dark mode low-contrast text requires review"]
+      }
+    ],
+    "telemetry": {
+      "input_tokens": 1270,
+      "output_tokens": 205,
+      "cost_usd": 0.000894,
+      "latency_ms": 450.0
+    }
+  },
+  {
+    "id": "tc_015_non_media_noise_blank_wallpaper",
+    "candidates": [],
+    "telemetry": {
+      "input_tokens": 1120,
+      "output_tokens": 35,
+      "cost_usd": 0.000424,
+      "latency_ms": 280.0
+    }
+  }
+]

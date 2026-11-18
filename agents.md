@@ -10,9 +10,9 @@ This repository must prioritize reliability, traceability, security and measurab
 
 ## Approved architecture
 
-- Frontend: Next.js App Router + TypeScript
+- Frontend (`FE/`): Next.js App Router + TypeScript
 - UI: Tailwind CSS + shadcn/ui
-- Backend: Python + FastAPI
+- Backend (`BE/`): Python + FastAPI (unified runner in `BE/run.py`)
 - Database: Supabase PostgreSQL
 - Authentication: Supabase Auth
 - Storage: Private Supabase Storage
