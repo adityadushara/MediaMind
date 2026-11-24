@@ -193,7 +193,11 @@ export default function DashboardPage() {
           </div>
 
           {/* Processing and Review Alert Banners */}
-          <ProcessingStatusBanner jobs={jobs} pendingReviewCount={pendingReviewCount} />
+          <ProcessingStatusBanner
+            jobs={jobs}
+            pendingReviewCount={pendingReviewCount}
+            onRetried={() => refreshData({ silent: true })}
+          />
 
           {/* Core Metrics Cards */}
           <MetricsCards

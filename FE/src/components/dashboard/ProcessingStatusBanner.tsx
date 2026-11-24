@@ -9,6 +9,8 @@ import { retryProcessingJob } from "@/lib/api";
 interface ProcessingStatusBannerProps {
   jobs: ProcessingJob[];
   pendingReviewCount?: number;
+  /** Called after a retry is queued so the dashboard can refresh in place. */
+  onRetried?: () => void;
 }
 
 function describeJobError(message?: string | null): string {
@@ -28,7 +30,11 @@ function describeJobError(message?: string | null): string {
   return message.length > 220 ? `${message.slice(0, 220)}…` : message;
 }
 
-export function ProcessingStatusBanner({ jobs = [], pendingReviewCount = 0 }: ProcessingStatusBannerProps) {
+export function ProcessingStatusBanner({
+  jobs = [],
+  pendingReviewCount = 0,
+  onRetried,
+}: ProcessingStatusBannerProps) {
   const safeJobs = Array.isArray(jobs) ? jobs : [];
   const activeJobs = safeJobs.filter((j) => j.status === "queued" || j.status === "processing");
   const failedJobs = safeJobs.filter((j) => j.status === "failed");
@@ -46,9 +52,9 @@ export function ProcessingStatusBanner({ jobs = [], pendingReviewCount = 0 }: Pr
       for (const job of failedJobs) {
         await retryProcessingJob(job.id);
       }
-      // The dashboard loads its data on mount; reload so the retried jobs and
-      // their progress are visible immediately.
-      window.location.reload();
+      // Refresh in place; a full page reload threw away the app state for a
+      // single list update.
+      onRetried?.();
     } catch (err) {
       setRetryError(err instanceof Error ? err.message : "Could not retry processing.");
       setIsRetrying(false);
@@ -118,18 +124,18 @@ export function ProcessingStatusBanner({ jobs = [], pendingReviewCount = 0 }: Pr
             <CheckCircle2 className="h-5 w-5 text-emerald-700" />
             <div>
               <p className="text-sm font-bold text-emerald-950">
-                {pendingReviewCount} new item{pendingReviewCount > 1 ? "s" : ""} added to your Library
+                {pendingReviewCount} AI match{pendingReviewCount > 1 ? "es" : ""} need your review
               </p>
               <p className="text-xs text-emerald-800">
-                AI has identified and categorized your screenshots directly into your library.
+                Check them against the preserved screenshot to confirm or correct.
               </p>
             </div>
           </div>
           <Link
-            href="/library"
+            href="/library?verification_status=needs_review"
             className="px-4 py-2 rounded-xl bg-emerald-700 text-white hover:bg-emerald-800 text-xs font-bold transition-colors shadow-sm flex items-center gap-1.5"
           >
-            <span>View Library</span>
+            <span>Review now</span>
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         </div>
