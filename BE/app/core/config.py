@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     # Runtime AI (Gemini)
     GEMINI_API_KEY: str = Field(default="")
     GEMINI_RUNTIME_MODEL: str = Field(
-        default="gemini-3.1-flash-lite",
+        default="gemini-3.5-flash-lite",
         validation_alias=AliasChoices("GEMINI_RUNTIME_MODEL", "GEMINI_MODEL_ID"),
         description="Canonical Gemini model identifier (supports legacy GEMINI_MODEL_ID alias)",
     )

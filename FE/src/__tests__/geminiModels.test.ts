@@ -16,7 +16,7 @@ afterEach(() => {
 describe("gemini model resolution", () => {
   it("ignores retired model ids and uses the current default", () => {
     vi.stubEnv("GEMINI_RUNTIME_MODEL", "gemini-2.5-flash");
-    expect(getConfiguredModel()).toBe("gemini-3.8-flash");
+    expect(getConfiguredModel()).toBe("gemini-3.5-flash-lite");
     expect(getModelCandidates()).not.toContain("gemini-2.5-flash");
   });
 
@@ -50,14 +50,14 @@ describe("gemini model resolution", () => {
 
   it("falls back to the next model when the configured model is retired", async () => {
     vi.stubEnv("GEMINI_RUNTIME_MODEL", "gemini-2.5-flash");
-    vi.stubEnv("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash-lite");
+    vi.stubEnv("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash");
 
     const calls: string[] = [];
     const fakeAi = {
       models: {
         generateContent: async ({ model }: { model: string }) => {
           calls.push(model);
-          if (model === "gemini-3.8-flash") {
+          if (model === "gemini-3.5-flash-lite") {
             throw Object.assign(new Error("model retired"), { status: 404 });
           }
           return { text: '{"candidates":[]}' };
@@ -71,9 +71,9 @@ describe("gemini model resolution", () => {
       { retriesPerModel: 0 }
     );
 
-    expect(result.model).toBe("gemini-3.5-flash-lite");
+    expect(result.model).toBe("gemini-3.5-flash");
     expect(result.fallbackUsed).toBe(true);
-    expect(calls).toContain("gemini-3.8-flash");
+    expect(calls).toContain("gemini-3.5-flash-lite");
   });
 
   it("retries transient errors before giving up on a model", async () => {

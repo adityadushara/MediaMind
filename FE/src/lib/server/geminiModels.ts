@@ -12,7 +12,7 @@ import { GoogleGenAI, type GenerateContentParameters } from "@google/genai";
  * falls back across models with retries for transient 429/5xx responses.
  */
 
-export const DEFAULT_RUNTIME_MODEL = "gemini-3.8-flash";
+export const DEFAULT_RUNTIME_MODEL = "gemini-3.5-flash-lite";
 
 /**
  * Conservative fallback ladder. Each entry must support multimodal
@@ -20,7 +20,6 @@ export const DEFAULT_RUNTIME_MODEL = "gemini-3.8-flash";
  * rejects them for new users.
  */
 export const DEFAULT_FALLBACK_MODELS = [
-  "gemini-3.5-flash-lite",
   "gemini-3.5-flash",
   "gemini-3.1-flash-lite",
   "gemini-flash-latest",
