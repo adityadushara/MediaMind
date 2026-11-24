@@ -17,6 +17,7 @@ import {
   linkSourceToLibraryItem,
   unlinkSourceFromLibraryItem,
   getSubcategories,
+  peekCachedList,
   resolveMediaUrl,
   verifyLibraryItem,
 } from "@/lib/api";
@@ -28,6 +29,7 @@ import { useAuth } from "@/context/AuthContext";
 import {
   LibraryItem,
   LibraryItemDetail,
+  LibraryItemListResponse,
   ContentType,
   ConsumptionStatus,
   SourceAsset,
@@ -231,8 +233,17 @@ function MediaItemThumbnail({
 export default function LibraryPage() {
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [items, setItems] = useState<LibraryItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [items, setItems] = useState<LibraryItem[]>(() => {
+    // Seed from the cached list so the shelf paints on the first frame. Deep
+    // links with filters skip the seed to avoid flashing unfiltered rows.
+    if (typeof window === "undefined") return [];
+    if (window.location.search.replace(/^\?/, "").length > 0) return [];
+    const cached = peekCachedList<LibraryItemListResponse>("/api/v1/library?");
+    return Array.isArray(cached?.items) ? cached.items : [];
+  });
+  const [isLoading, setIsLoading] = useState(
+    () => peekCachedList<LibraryItemListResponse>("/api/v1/library?") === null
+  );
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [selectedType, setSelectedType] = useState<string>("all");

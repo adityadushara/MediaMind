@@ -8,7 +8,13 @@ import { ProcessingStatusBanner } from "@/components/dashboard/ProcessingStatusB
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { QuickUploadModal } from "@/components/dashboard/QuickUploadModal";
 import { AskLibraryModal } from "@/components/dashboard/AskLibraryModal";
-import { getLibraryItems, getLibraryStats, getProcessingJobs, onApiCacheUpdate } from "@/lib/api";
+import {
+  getLibraryItems,
+  getLibraryStats,
+  getProcessingJobs,
+  onApiCacheUpdate,
+  peekCachedList,
+} from "@/lib/api";
 import { LibraryItem, LibraryStats, ProcessingJob } from "@/types";
 import { RefreshCw, Loader2, UploadCloud } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -16,9 +22,15 @@ import { LandingPage } from "@/components/landing/LandingPage";
 
 export default function DashboardPage() {
   const { user, isLoading: isAuthLoading, openAuthModal } = useAuth();
-  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
-  const [stats, setStats] = useState<LibraryStats | null>(null);
-  const [jobs, setJobs] = useState<ProcessingJob[]>([]);
+  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(
+    () => peekCachedList<{ items?: LibraryItem[] }>("/api/v1/library?")?.items ?? []
+  );
+  const [stats, setStats] = useState<LibraryStats | null>(
+    () => peekCachedList<LibraryStats>("/api/v1/library/stats")
+  );
+  const [jobs, setJobs] = useState<ProcessingJob[]>(
+    () => peekCachedList<ProcessingJob[]>("/api/v1/jobs") ?? []
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isAskAIOpen, setIsAskAIOpen] = useState(false);

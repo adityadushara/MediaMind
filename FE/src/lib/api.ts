@@ -225,6 +225,22 @@ async function fetchJsonCached<T>(path: string): Promise<T> {
   return revalidate<T>(path);
 }
 
+/**
+ * Last known value for a read, for seamless first paint.
+ *
+ * Pages seed their initial state from here so a navigation renders its rows
+ * immediately instead of mounting empty and re-rendering once the (already
+ * cached) response resolves.
+ */
+export function peekCachedList<T>(pathPrefix: string): T | null {
+  let newest: { at: number; data: unknown } | null = null;
+  for (const [key, entry] of getCache.entries()) {
+    if (!key.startsWith(pathPrefix)) continue;
+    if (!newest || entry.at > newest.at) newest = entry;
+  }
+  return (newest?.data as T) ?? null;
+}
+
 export async function checkBackendHealth(): Promise<HealthStatus> {
   try {
     const res = await fetch(`${API_BASE}/health`, { cache: "no-store" });

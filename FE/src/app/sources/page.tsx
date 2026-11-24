@@ -6,6 +6,7 @@ import { Header } from "@/components/layout/Header";
 import {
   getSourceAssets,
   getSourceAssetDetail,
+  peekCachedList,
   retryProcessingJob,
   deleteSourceAsset,
   resolveMediaUrl,
@@ -54,9 +55,14 @@ const SOURCES_SORT_OPTIONS: SelectOption[] = [
 
 export default function SourcesPage() {
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [assets, setAssets] = useState<SourceAsset[]>([]);
+  const [assets, setAssets] = useState<SourceAsset[]>(() => {
+    const cached = peekCachedList<{ items?: SourceAsset[] }>("/api/v1/assets");
+    return Array.isArray(cached?.items) ? cached.items : [];
+  });
   const [totalCount, setTotalCount] = useState(0);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(
+    () => peekCachedList<{ items?: SourceAsset[] }>("/api/v1/assets") === null
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
