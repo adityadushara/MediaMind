@@ -180,6 +180,11 @@ export function isModelUnavailable(err: unknown): boolean {
   const status = getErrorStatus(err);
   if (status === 404) return true;
   const message = getErrorMessage(err).toLowerCase();
+  // "High demand" is capacity pressure on one model, not a network blip:
+  // retrying it wastes the whole time budget, while the next model answers.
+  if (status === 503 || message.includes("high demand") || message.includes("overloaded")) {
+    return true;
+  }
   return (
     message.includes("no longer available") ||
     message.includes("not found") ||

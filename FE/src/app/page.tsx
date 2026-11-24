@@ -16,7 +16,7 @@ import {
   peekCachedList,
 } from "@/lib/api";
 import { LibraryItem, LibraryStats, ProcessingJob } from "@/types";
-import { RefreshCw, Loader2, UploadCloud } from "lucide-react";
+import { Loader2, UploadCloud } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { LandingPage } from "@/components/landing/LandingPage";
 
@@ -31,7 +31,6 @@ export default function DashboardPage() {
   const [jobs, setJobs] = useState<ProcessingJob[]>(
     () => peekCachedList<ProcessingJob[]>("/api/v1/jobs") ?? []
   );
-  const [isLoading, setIsLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isAskAIOpen, setIsAskAIOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -39,9 +38,8 @@ export default function DashboardPage() {
   // Each panel paints as soon as its own data arrives. Waiting for the slowest
   // request (the job list, which does recovery work) held the counts back by
   // two seconds for no reason.
-  const refreshData = useCallback(async (options?: { silent?: boolean }) => {
+  const refreshData = useCallback(async () => {
     if (!user) return;
-    if (!options?.silent) setIsLoading(true);
 
     const itemsRequest = getLibraryItems({ limit: 10 })
       .then((res) => {
@@ -58,7 +56,6 @@ export default function DashboardPage() {
       .catch(() => {});
 
     await Promise.all([itemsRequest, statsRequest, jobsRequest]);
-    if (!options?.silent) setIsLoading(false);
   }, [user]);
 
   // Reads are served from cache and refreshed in the background, so the
@@ -67,7 +64,7 @@ export default function DashboardPage() {
   useEffect(
     () =>
       onApiCacheUpdate(() => {
-        void refreshData({ silent: true });
+        void refreshData();
       }),
     [refreshData]
   );
@@ -79,7 +76,6 @@ export default function DashboardPage() {
         setLibraryItems([]);
         setJobs([]);
         setStats(null);
-        setIsLoading(false);
       });
       return;
     }
@@ -101,7 +97,7 @@ export default function DashboardPage() {
     if (!hasActive) return;
 
     const timer = setInterval(() => {
-      void refreshData({ silent: true });
+      void refreshData();
     }, 8000);
 
     return () => clearInterval(timer);
@@ -186,15 +182,6 @@ export default function DashboardPage() {
 
             <div className="flex items-center gap-2.5">
               <button
-                onClick={() => refreshData()}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 text-stone-800 text-xs font-bold transition-all shadow-sm cursor-pointer"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
-                <span>Refresh</span>
-              </button>
-
-              <button
                 onClick={() => setIsUploadOpen(true)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-sm shadow-amber-600/20 active:scale-95 cursor-pointer"
               >
@@ -208,7 +195,7 @@ export default function DashboardPage() {
           <ProcessingStatusBanner
             jobs={jobs}
             pendingReviewCount={pendingReviewCount}
-            onRetried={() => refreshData({ silent: true })}
+            onRetried={() => refreshData()}
           />
 
           {/* Core Metrics Cards */}

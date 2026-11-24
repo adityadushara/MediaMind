@@ -86,7 +86,7 @@ describe("gemini model resolution", () => {
         generateContent: async () => {
           attempts++;
           if (attempts === 1) {
-            throw Object.assign(new Error("high demand"), { status: 503 });
+            throw Object.assign(new Error("internal error"), { status: 500 });
           }
           return { text: "ok" };
         },
@@ -100,6 +100,35 @@ describe("gemini model resolution", () => {
     );
     expect(result.model).toBe("gemini-3.8-flash");
     expect(result.attempts).toBe(2);
+  });
+
+  it("skips a model that reports capacity pressure instead of retrying it", async () => {
+    vi.stubEnv("GEMINI_RUNTIME_MODEL", "gemini-3.8-flash");
+    vi.stubEnv("GEMINI_FALLBACK_MODELS", "gemini-3.5-flash-lite");
+
+    const calls: string[] = [];
+    const fakeAi = {
+      models: {
+        generateContent: async ({ model }: { model: string }) => {
+          calls.push(model);
+          if (model === "gemini-3.8-flash") {
+            throw Object.assign(new Error("This model is currently experiencing high demand"), {
+              status: 503,
+            });
+          }
+          return { text: "ok" };
+        },
+      },
+    };
+
+    const result = await generateContentWithFallback<{ text?: string }>(
+      fakeAi as never,
+      { contents: "hello" },
+      { retriesPerModel: 1 }
+    );
+    expect(result.model).toBe("gemini-3.5-flash-lite");
+    // One attempt on the busy model, then straight to the fallback.
+    expect(calls.filter((c) => c === "gemini-3.8-flash")).toHaveLength(1);
   });
 
   it("treats network/socket errors as transient and falls back to the next model", async () => {

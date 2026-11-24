@@ -247,10 +247,25 @@ export interface RAGQueryRequest {
   top_k?: number;
 }
 
+export interface CatalogSuggestion {
+  title: string;
+  creator: string | null;
+  content_type: string;
+  release_year: number | null;
+  rationale: string | null;
+  direct_url: string;
+  /** True when the link is a provider search rather than the item page. */
+  link_is_search: boolean;
+}
+
 export interface RAGQueryResponse {
   query: string;
   answer: string;
   matched_items: LibraryItem[];
+  /** True when saved items answer the question. */
+  library_covered: boolean;
+  /** Titles worth saving when the library does not cover the question. */
+  suggestions: CatalogSuggestion[];
   duration_ms: number;
   model_name: string;
 }

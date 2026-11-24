@@ -378,6 +378,37 @@
   - Marks candidate as rejected. Source screenshot remains preserved in `source_assets`.
 
 ### 2.7. Enterprise RAG Engine
+- `POST /api/v1/rag/ask`
+  - Answers a natural-language question. The whole library (up to 200 items) plus
+    the names of the saved screenshots are put in the model's context, so the
+    answer is grounded in what the user actually has.
+  - When the library does not cover the question, the response says so and the
+    answer itself comes from general knowledge, with a `suggestions` entry the UI
+    can offer as "Add to library": the title, creator, type, year, a rationale,
+    and a `direct_url` resolved through the metadata providers (falling back to a
+    provider search, flagged by `link_is_search`).
+  - Response `200 OK`:
+    ```json
+    {
+      "query": "Recommend a documentary about space",
+      "answer": "Your library has none saved. Cosmos: A Spacetime Odyssey ...",
+      "matched_items": [],
+      "library_covered": false,
+      "suggestions": [
+        {
+          "title": "Cosmos: A Spacetime Odyssey",
+          "creator": "Neil deGrasse Tyson",
+          "content_type": "documentary",
+          "release_year": 2014,
+          "rationale": "A visually stunning journey through space and science.",
+          "direct_url": "https://www.imdb.com/title/tt2395695/",
+          "link_is_search": false
+        }
+      ],
+      "duration_ms": 3200,
+      "model_name": "gemini-3.5-flash-lite"
+    }
+    ```
 - `POST /api/v1/rag/query`
   - Grounded question-answering over user's personal media catalog.
   - Payload:

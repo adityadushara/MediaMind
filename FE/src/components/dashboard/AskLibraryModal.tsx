@@ -16,9 +16,10 @@ import {
   Newspaper,
   Mail,
   Folder,
+  Plus,
 } from "lucide-react";
-import { askLibrary } from "@/lib/api";
-import { RAGQueryResponse, LibraryItem } from "@/types";
+import { askLibrary, createLibraryItem } from "@/lib/api";
+import { RAGQueryResponse, LibraryItem, CatalogSuggestion } from "@/types";
 
 interface AskLibraryModalProps {
   isOpen: boolean;
@@ -30,6 +31,8 @@ export function AskLibraryModal({ isOpen, onClose }: AskLibraryModalProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [response, setResponse] = useState<RAGQueryResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [savingTitle, setSavingTitle] = useState<string | null>(null);
+  const [savedTitles, setSavedTitles] = useState<string[]>([]);
 
   if (!isOpen) return null;
 
@@ -49,6 +52,30 @@ export function AskLibraryModal({ isOpen, onClose }: AskLibraryModalProps) {
       setError(msg);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleSaveSuggestion = async (suggestion: CatalogSuggestion) => {
+    if (savingTitle) return;
+    setSavingTitle(suggestion.title);
+    try {
+      await createLibraryItem({
+        title: suggestion.title,
+        creator: suggestion.creator || undefined,
+        content_type: suggestion.content_type as LibraryItem["content_type"],
+        release_year: suggestion.release_year || undefined,
+        direct_url: suggestion.direct_url,
+        overview: suggestion.rationale || undefined,
+        consumption_status: "want_to_consume",
+      });
+      setSavedTitles((prev) => [...prev, suggestion.title]);
+    } catch (err) {
+      setError(
+        "Could not add that to your library: " +
+          (err instanceof Error ? err.message : String(err))
+      );
+    } finally {
+      setSavingTitle(null);
     }
   };
 
@@ -174,16 +201,83 @@ export function AskLibraryModal({ isOpen, onClose }: AskLibraryModalProps) {
                 <div className="flex items-center justify-between pb-2 border-b border-stone-100">
                   <span className="text-xs font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
                     <Sparkles className="h-3.5 w-3.5" />
-                    AI Answer
-                  </span>
-                  <span className="text-[11px] font-mono px-2 py-0.5 rounded-md bg-stone-100 text-stone-600">
-                    ⚡ {response.duration_ms}ms · {response.model_name}
+                    Answer
                   </span>
                 </div>
                 <div className="text-sm text-stone-800 leading-relaxed whitespace-pre-line font-medium">
                   {response.answer}
                 </div>
               </div>
+
+              {/* Not-in-library suggestions: answer + save + open */}
+              {response.suggestions && response.suggestions.length > 0 && (
+                <div className="space-y-3">
+                  <span className="text-xs font-bold uppercase tracking-wider text-stone-500">
+                    Not in your library yet
+                  </span>
+                  {response.suggestions.map((suggestion) => {
+                    const saved =
+                      savedTitles.includes(suggestion.title) || savingTitle === suggestion.title;
+                    return (
+                      <div
+                        key={suggestion.title}
+                        className="bg-white rounded-2xl border border-amber-200 p-4 shadow-xs space-y-3"
+                      >
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-amber-800">
+                            {getTypeIcon(suggestion.content_type)}
+                            <span>{suggestion.content_type.replace(/_/g, " ")}</span>
+                            {suggestion.release_year && (
+                              <span className="text-stone-500 font-semibold normal-case">
+                                · {suggestion.release_year}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="font-bold text-stone-900 text-sm">{suggestion.title}</h4>
+                          {suggestion.creator && (
+                            <p className="text-xs text-stone-600">by {suggestion.creator}</p>
+                          )}
+                          {suggestion.rationale && (
+                            <p className="text-xs text-stone-500 leading-snug">
+                              {suggestion.rationale}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleSaveSuggestion(suggestion)}
+                            disabled={saved || savingTitle !== null}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer"
+                          >
+                            {savingTitle === suggestion.title ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Plus className="h-3.5 w-3.5" />
+                            )}
+                            <span>
+                              {savedTitles.includes(suggestion.title)
+                                ? "Added to library"
+                                : savingTitle === suggestion.title
+                                  ? "Adding..."
+                                  : "Add to library"}
+                            </span>
+                          </button>
+                          <a
+                            href={suggestion.direct_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 text-xs font-bold transition-colors"
+                          >
+                            <span>{suggestion.link_is_search ? "Search the web" : "Open link"}</span>
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Matched Media Cards */}
               {response.matched_items && response.matched_items.length > 0 && (

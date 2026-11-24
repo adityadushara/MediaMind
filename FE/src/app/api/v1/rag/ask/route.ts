@@ -6,7 +6,15 @@ import {
   generateContentWithFallback,
   getConfiguredModel,
 } from "@/lib/server/geminiModels";
-import { normalizeContentType, providerUrlFromMetadata, resolveDirectUrl } from "@/lib/server/linkResolver";
+import {
+  normalizeContentType,
+  providerSearchUrl,
+  providerUrlFromMetadata,
+  resolveDirectUrl,
+  sanitizeExternalUrl,
+} from "@/lib/server/linkResolver";
+import { MetadataRouter } from "@/lib/server/metadataRouter";
+import type { ContentType } from "@/types";
 
 interface LibraryRow {
   id: string;
@@ -18,9 +26,24 @@ interface LibraryRow {
   overview: string | null;
   release_year: number | null;
   consumption_status?: string | null;
+  user_rating?: number | null;
   external_provider?: string | null;
   external_id?: string | null;
   provider_metadata?: Record<string, unknown> | null;
+}
+
+interface LinkedItem extends LibraryRow {
+  direct_url: string;
+}
+
+interface CatalogSuggestion {
+  title: string;
+  creator: string | null;
+  content_type: ContentType;
+  release_year: number | null;
+  rationale: string | null;
+  direct_url: string;
+  link_is_search: boolean;
 }
 
 const STOP_WORDS = new Set([
@@ -77,13 +100,22 @@ function scoreItem(item: LibraryRow, query: string, queryTokens: string[]): numb
   if (queryTokens.length > 0) {
     let matched = 0;
     for (const token of queryTokens) {
-      if (corpusTokens.has(token)) matched++;
+      // "focus" must match "focused": a shared word stem is real evidence,
+      // an exact-string check made the fallback blind to inflections.
+      const isMatch =
+        corpusTokens.has(token) ||
+        (token.length >= 4 &&
+          Array.from(corpusTokens).some(
+            (word) => word.startsWith(token) || token.startsWith(word)
+          ));
+      if (isMatch) matched++;
     }
     score += (matched / queryTokens.length) * 0.5;
   }
 
   if (item.content_type && query.includes(item.content_type.toLowerCase().replace(/_/g, " "))) {
-    score += 0.2;
+    // A shared content-type word ("book") is not evidence the item is relevant.
+    score += 0.1;
   }
   if (item.subcategory && query.includes(item.subcategory.toLowerCase())) {
     score += 0.25;
@@ -91,7 +123,7 @@ function scoreItem(item: LibraryRow, query: string, queryTokens: string[]): numb
   return Number(score.toFixed(4));
 }
 
-function withLinks(item: LibraryRow): LibraryRow & { direct_url: string } {
+function withLinks(item: LibraryRow): LinkedItem {
   const contentType = normalizeContentType(item.content_type);
   const metadata = (item.provider_metadata || {}) as Record<string, unknown>;
   const mediamind = metadata._mediamind as
@@ -113,7 +145,34 @@ function withLinks(item: LibraryRow): LibraryRow & { direct_url: string } {
   };
 }
 
-function fallbackAnswer(query: string, matched: Array<LibraryRow & { direct_url: string }>): string {
+const STATUS_LABELS: Record<string, string> = {
+  want_to_consume: "want to consume",
+  consuming: "currently consuming",
+  completed: "completed",
+  on_hold: "on hold",
+  dropped: "dropped",
+};
+
+/** One compact line per saved item, so the model sees the whole library. */
+function describeItem(item: LinkedItem, index: number): string {
+  const bits = [
+    item.creator ? `by ${item.creator}` : null,
+    item.release_year ? String(item.release_year) : null,
+    (item.content_type || "other").replace(/_/g, " "),
+    item.subcategory || null,
+    item.consumption_status ? STATUS_LABELS[item.consumption_status] || null : null,
+    item.user_rating ? `rated ${item.user_rating}/10` : null,
+  ].filter(Boolean);
+  const overview = (item.overview || "").replace(/\s+/g, " ").slice(0, 180);
+  return `${index + 1}. ${item.title} — ${bits.join(", ")}. Link: ${item.direct_url}${
+    overview ? `. Notes: ${overview}` : ""
+  }`;
+}
+
+function fallbackAnswer(query: string, matched: LinkedItem[]): string {
+  if (matched.length === 0) {
+    return `Nothing in your library covers **'${query}'** yet.`;
+  }
   const list = matched
     .map(
       (item) =>
@@ -122,6 +181,127 @@ function fallbackAnswer(query: string, matched: Array<LibraryRow & { direct_url:
     )
     .join("\n");
   return `Based on your library, here are the most relevant items for **'${query}'**:\n\n${list}`;
+}
+
+interface ParsedModelReply {
+  answer: string;
+  libraryCovered: boolean;
+  suggestion: {
+    title?: string;
+    creator?: string | null;
+    content_type?: string | null;
+    release_year?: number | null;
+    why?: string | null;
+  } | null;
+}
+
+const SUGGESTION_SCHEMA_HINT = `{"library_covered": true|false, "suggestion": null | {"title": "...", "creator": "...", "content_type": "book|movie|tv_show|youtube_video|documentary|podcast|course|article|newsletter|other", "release_year": 2020, "why": "one short line"}}`;
+
+/** Returns the balanced JSON object starting at `start`, if there is one. */
+function extractJsonObject(text: string, start: number): string | null {
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (char === "\\") escaped = true;
+      else if (char === '"') inString = false;
+      continue;
+    }
+    if (char === '"') inString = true;
+    else if (char === "{") depth++;
+    else if (char === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
+/** Splits the trailing JSON contract off the prose answer. */
+function parseModelReply(raw: string): ParsedModelReply {
+  const text = raw.replace(/```[a-z]*\s*/gi, "").replace(/```/g, "").trim();
+  const marker = text.lastIndexOf('"library_covered"');
+  const start = marker >= 0 ? text.lastIndexOf("{", marker) : text.lastIndexOf("{");
+  if (start >= 0) {
+    const candidate = extractJsonObject(text, start);
+    try {
+      if (!candidate) throw new Error("no object");
+      const parsed = JSON.parse(candidate) as {
+        library_covered?: unknown;
+        suggestion?: unknown;
+      };
+      if (typeof parsed.library_covered === "boolean") {
+        const suggestion = parsed.suggestion as Record<string, unknown> | null;
+        return {
+          // The contract block (and anything after it) is not part of the answer.
+          answer: text.slice(0, start).trim(),
+          libraryCovered: parsed.library_covered,
+          suggestion:
+            suggestion && typeof suggestion === "object" && typeof suggestion.title === "string"
+              ? {
+                  title: suggestion.title,
+                  creator:
+                    typeof suggestion.creator === "string" ? suggestion.creator : null,
+                  content_type:
+                    typeof suggestion.content_type === "string"
+                      ? suggestion.content_type
+                      : null,
+                  release_year:
+                    typeof suggestion.release_year === "number"
+                      ? suggestion.release_year
+                      : null,
+                  why: typeof suggestion.why === "string" ? suggestion.why : null,
+                }
+              : null,
+        };
+      }
+    } catch {
+      // Not the contract block; fall through to plain prose.
+    }
+  }
+  return { answer: text, libraryCovered: false, suggestion: null };
+}
+
+/**
+ * A suggestion is only useful if it can be acted on, so the link is resolved
+ * through the metadata providers first and falls back to a provider search.
+ */
+async function buildSuggestion(
+  suggestion: NonNullable<ParsedModelReply["suggestion"]>
+): Promise<CatalogSuggestion | null> {
+  const title = (suggestion.title || "").trim();
+  if (!title) return null;
+
+  const contentType = normalizeContentType(suggestion.content_type);
+  const creator = suggestion.creator?.trim() || null;
+  const releaseYear = suggestion.release_year ?? null;
+
+  let directUrl: string | null = null;
+  try {
+    const meta = await MetadataRouter.search({
+      title,
+      creator,
+      content_type: contentType,
+      release_year: releaseYear,
+    });
+    if (meta?.direct_url) directUrl = sanitizeExternalUrl(meta.direct_url);
+  } catch {
+    // A failed lookup still leaves the search fallback below.
+  }
+
+  const fallback = providerSearchUrl(contentType, title, creator, releaseYear);
+  return {
+    title,
+    creator,
+    content_type: contentType,
+    release_year: releaseYear,
+    rationale: suggestion.why?.trim() || null,
+    direct_url: directUrl || fallback,
+    link_is_search: !directUrl,
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -141,88 +321,123 @@ export async function POST(req: NextRequest) {
   }
 
   const query = (body.query || "").trim();
-  const topK = Math.min(20, Math.max(1, body.top_k || 5));
+  const topK = Math.min(20, Math.max(1, body.top_k || 6));
 
   if (!query) {
     return NextResponse.json({ detail: "Query is required" }, { status: 400 });
   }
 
-  const { data: items, error } = await db
-    .from("library_items")
-    .select("*")
-    .eq("user_id", user.id)
-    .order("created_at", { ascending: false })
-    .limit(200);
+  const [{ data: items, error }, { data: assets }] = await Promise.all([
+    db
+      .from("library_items")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    db
+      .from("source_assets")
+      .select("file_name, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(40),
+  ]);
 
   if (error) {
     return NextResponse.json({ detail: error.message }, { status: 500 });
   }
 
-  if (!items || items.length === 0) {
-    return NextResponse.json({
+  const library = (items || []).map((item) => withLinks(item as LibraryRow));
+  const screenshotNames = (assets || [])
+    .map((asset: { file_name?: string }) => asset.file_name)
+    .filter((name): name is string => Boolean(name));
+
+  const noModelResponse = (answer: string, modelName = "keyword-fallback") =>
+    NextResponse.json({
       query,
-      answer: `I couldn't find any records in your personal library matching **'${query}'**. Upload a screenshot first and I'll be able to search it.`,
-      matched_items: [],
+      answer,
+      matched_items: [] as LinkedItem[],
+      library_covered: false,
+      suggestions: [] as CatalogSuggestion[],
       duration_ms: Date.now() - startTime,
-      model_name: getConfiguredModel(),
+      model_name: modelName,
     });
+
+  if (library.length === 0 && screenshotNames.length === 0) {
+    return noModelResponse(
+      `Your library is still empty, so I can't ground an answer yet. Upload a screenshot and I'll search everything you save.`
+    );
   }
 
   const normalizedQuery = query.toLowerCase();
   const queryTokens = tokenize(query);
-
-  const scored = (items as LibraryRow[])
+  const matched = library
     .map((item) => ({ item, score: scoreItem(item, normalizedQuery, queryTokens) }))
-    .sort((a, b) => b.score - a.score);
-
-  const matched = scored
-    .filter((entry) => entry.score > 0.15)
+    .sort((a, b) => b.score - a.score)
+    .filter((entry) => entry.score > 0.35)
     .slice(0, topK)
-    .map((entry) => withLinks(entry.item));
+    .map((entry) => entry.item);
 
   let modelName = getConfiguredModel();
+  let reply: ParsedModelReply | null = null;
 
-  if (matched.length === 0) {
-    return NextResponse.json({
-      query,
-      answer: `I couldn't find any records in your personal library matching **'${query}'**.\n\nTry searching by creator, content type (*books*, *YouTube videos*, *podcasts*), or subcategory.`,
-      matched_items: [],
-      duration_ms: Date.now() - startTime,
-      model_name: modelName,
-    });
-  }
-
-  let answer = "";
   try {
     const ai = createGeminiClient();
-    const contextLines = matched.map(
-      (item, index) =>
-        `${index + 1}. Title: ${item.title}\n   Creator: ${item.creator || "Unknown"}\n   Type: ${
-          item.content_type
-        }\n   Subcategory: ${item.subcategory || "General"}\n   Direct Link: ${
-          item.direct_url
-        }\n   Overview: ${(item.overview || "").slice(0, 240)}`
-    );
+    const libraryContext =
+      library.length > 0
+        ? library.map((item, index) => describeItem(item, index)).join("\n")
+        : "(no media saved yet)";
 
-    const prompt = `You are MediaMind's AI Library Assistant. Answer the user's question using ONLY the verified library items below.
-Be concise. Mention exact titles, creators, and include the direct link as a markdown link for each item you mention.
-If the items do not answer the question, say so plainly.
+    const prompt = `You are MediaMind's library assistant. Your job is to answer the user's question
+accurately, using their saved library first and your own knowledge second.
 
-=== USER'S VERIFIED LIBRARY ITEMS ===
-${contextLines.join("\n\n")}
+=== THE USER'S ENTIRE LIBRARY (${library.length} items) ===
+${libraryContext}
 
-User Question: ${query}
+=== SCREENSHOTS THEY HAVE SAVED (${screenshotNames.length}) ===
+${screenshotNames.length > 0 ? screenshotNames.join(", ") : "(none)"}
 
-Assistant Answer:`;
+=== USER QUESTION ===
+${query}
 
-    const generation = await generateContentWithFallback<{ text?: string }>(
-      ai,
-      { contents: prompt },
-      { retriesPerModel: 1, timeoutMs: 15_000, budgetMs: 35_000 }
-    );
-    answer = (generation.response.text || "").trim();
-    if (answer) {
+=== HOW TO ANSWER ===
+1. Read the whole library above before answering. If items in it answer the question, answer from
+   them only: name exact titles, mention the creator, and include each item's link as a markdown link.
+   Do not claim the library contains something it does not.
+2. If the library does not contain what they are asking about, say so in one short sentence, then
+   answer the question itself accurately and helpfully from general knowledge, as an expert would.
+3. When the question is about a specific book, film, show, video, course or podcast that is NOT in
+   the library, also propose it as a catalog entry so they can save it.
+4. Be concise and concrete. No filler, no apologies, no repeating the question.
+
+Then end your reply with a single JSON object on its own line, exactly this shape:
+${SUGGESTION_SCHEMA_HINT}
+Set "library_covered" to true only when saved items answer the question. Set "suggestion" to null
+unless you are proposing a specific title that is missing from the library.`;
+
+    const runOnce = () =>
+      generateContentWithFallback<{ text?: string }>(
+        ai,
+        { contents: prompt },
+        // The ladder itself is the retry: retrying a struggling model inside the
+        // request budget meant the reliable fallback never got a turn.
+        { retriesPerModel: 0, timeoutMs: 12_000, budgetMs: 24_000 }
+      );
+
+    let generation;
+    try {
+      generation = await runOnce();
+    } catch (firstError) {
+      // A "high demand" burst usually clears in seconds, and one more pass is
+      // cheaper than answering a knowledge question with a keyword list.
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      generation = await runOnce().catch(() => {
+        throw firstError;
+      });
+    }
+    const text = (generation.response.text || "").trim();
+    if (text) {
       modelName = generation.model;
+      reply = parseModelReply(text);
     }
   } catch (aiErr) {
     console.warn(
@@ -231,15 +446,27 @@ Assistant Answer:`;
     );
   }
 
+  let answer = reply?.answer?.trim() || "";
+  let suggestions: CatalogSuggestion[] = [];
+  let libraryCovered = reply?.libraryCovered ?? false;
+
   if (!answer) {
     answer = fallbackAnswer(query, matched);
     modelName = "keyword-fallback";
+    libraryCovered = matched.length > 0;
+  }
+
+  if (!libraryCovered && reply?.suggestion) {
+    const suggestion = await buildSuggestion(reply.suggestion);
+    if (suggestion) suggestions = [suggestion];
   }
 
   return NextResponse.json({
     query,
     answer,
-    matched_items: matched,
+    matched_items: libraryCovered || matched.length > 0 ? matched : [],
+    library_covered: libraryCovered,
+    suggestions,
     duration_ms: Date.now() - startTime,
     model_name: modelName,
   });
