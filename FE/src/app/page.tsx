@@ -8,7 +8,7 @@ import { ProcessingStatusBanner } from "@/components/dashboard/ProcessingStatusB
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { QuickUploadModal } from "@/components/dashboard/QuickUploadModal";
 import { AskLibraryModal } from "@/components/dashboard/AskLibraryModal";
-import { getLibraryItems, getLibraryStats, getProcessingJobs } from "@/lib/api";
+import { getLibraryItems, getLibraryStats, getProcessingJobs, onApiCacheUpdate } from "@/lib/api";
 import { LibraryItem, LibraryStats, ProcessingJob } from "@/types";
 import { RefreshCw, Loader2, UploadCloud } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -24,9 +24,9 @@ export default function DashboardPage() {
   const [isAskAIOpen, setIsAskAIOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const refreshData = useCallback(async () => {
+  const refreshData = useCallback(async (options?: { silent?: boolean }) => {
     if (!user) return;
-    setIsLoading(true);
+    if (!options?.silent) setIsLoading(true);
     try {
       const [itemsRes, jobsRes, statsRes] = await Promise.all([
         getLibraryItems({ limit: 10 }),
@@ -39,9 +39,20 @@ export default function DashboardPage() {
     } catch {
       // Keep previous state
     } finally {
-      setIsLoading(false);
+      if (!options?.silent) setIsLoading(false);
     }
   }, [user]);
+
+  // Reads are served from cache and refreshed in the background, so the
+  // dashboard repaints itself when a fresh copy lands instead of waiting for a
+  // manual reload to notice a status change made in the library.
+  useEffect(
+    () =>
+      onApiCacheUpdate(() => {
+        void refreshData({ silent: true });
+      }),
+    [refreshData]
+  );
 
   useEffect(() => {
     if (isAuthLoading) return;
@@ -190,7 +201,7 @@ export default function DashboardPage() {
 
             <div className="flex items-center gap-2.5">
               <button
-                onClick={refreshData}
+                onClick={() => refreshData()}
                 disabled={isLoading}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 text-stone-800 text-xs font-bold transition-all shadow-sm cursor-pointer"
               >

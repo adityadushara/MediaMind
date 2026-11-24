@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseAdmin, createAuthenticatedClient } from "@/lib/server/supabaseAdmin";
+import { verifyAccessToken } from "@/lib/server/auth";
 import {
   getStorageBucket,
   isInlineDataUrl,
@@ -53,8 +54,8 @@ export async function GET(
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: authData, error: authError } = await getSupabaseAdmin().auth.getUser(token);
-  if (authError || !authData?.user) {
+  const authUser = await verifyAccessToken(token);
+  if (!authUser) {
     return NextResponse.json({ detail: "Unauthorized" }, { status: 401 });
   }
 
@@ -67,7 +68,7 @@ export async function GET(
     .from("source_assets")
     .select("id, file_path, mime_type")
     .eq("id", id)
-    .eq("user_id", authData.user.id)
+    .eq("user_id", authUser.id)
     .maybeSingle();
 
   if (assetError || !asset) {
@@ -82,7 +83,7 @@ export async function GET(
       .from("image_derivatives")
       .select("storage_path, mime_type")
       .eq("source_asset_id", id)
-      .eq("user_id", authData.user.id)
+      .eq("user_id", authUser.id)
       .eq("derivative_type", "region_crop")
       .order("created_at", { ascending: false })
       .limit(1);

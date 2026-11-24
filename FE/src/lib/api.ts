@@ -123,9 +123,13 @@ async function parseErrorDetail(res: Response, fallbackPrefix: string): Promise<
  * `invalidateApiCache` so the next read is fresh.
  */
 const GET_CACHE_TTL_MS = 20_000;
+/** Beyond this age cached data is no longer safe to paint even briefly. */
+const GET_CACHE_MAX_STALE_MS = 30 * 60_000;
+const CACHE_UPDATED_EVENT = "mediamind:api-cache-updated";
 const getCache = new Map<string, { at: number; data: unknown }>();
 const inflightGets = new Map<string, Promise<unknown>>();
 
+/** Drop cached reads so the next request fetches from the server. */
 export function invalidateApiCache(prefix?: string): void {
   if (!prefix) {
     getCache.clear();
@@ -134,6 +138,35 @@ export function invalidateApiCache(prefix?: string): void {
   for (const key of Array.from(getCache.keys())) {
     if (key.startsWith(prefix)) getCache.delete(key);
   }
+}
+
+/**
+ * Keep cached reads but mark them stale. The next render paints the last known
+ * data immediately and refreshes in the background, so a page never blocks on
+ * serverless round trips just because something changed elsewhere.
+ */
+export function markApiCacheStale(prefix?: string): void {
+  for (const [key, entry] of Array.from(getCache.entries())) {
+    if (!prefix || key.startsWith(prefix)) {
+      getCache.set(key, { at: 0, data: entry.data });
+    }
+  }
+}
+
+function emitCacheUpdate(path: string): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent(CACHE_UPDATED_EVENT, { detail: { path } }));
+}
+
+/** Subscribe to background refreshes so a page can re-render with fresh data. */
+export function onApiCacheUpdate(handler: (path: string) => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const listener = (event: Event) => {
+    const path = (event as CustomEvent<{ path?: string }>).detail?.path || "";
+    handler(path);
+  };
+  window.addEventListener(CACHE_UPDATED_EVENT, listener);
+  return () => window.removeEventListener(CACHE_UPDATED_EVENT, listener);
 }
 
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
@@ -156,18 +189,14 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-/** GET with a short cache and in-flight de-duplication. */
-async function fetchJsonCached<T>(path: string): Promise<T> {
-  const cached = getCache.get(path);
-  if (cached && Date.now() - cached.at < GET_CACHE_TTL_MS) {
-    return cached.data as T;
-  }
+function revalidate<T>(path: string): Promise<T> {
   const pending = inflightGets.get(path);
   if (pending) return pending as Promise<T>;
 
   const request = fetchJson<T>(path)
     .then((data) => {
       getCache.set(path, { at: Date.now(), data });
+      emitCacheUpdate(path);
       return data;
     })
     .finally(() => {
@@ -176,6 +205,24 @@ async function fetchJsonCached<T>(path: string): Promise<T> {
 
   inflightGets.set(path, request);
   return request;
+}
+
+/**
+ * GET with a short fresh window, stale-while-revalidate, and in-flight
+ * de-duplication. Stale data is returned at once and refreshed in the
+ * background; the update event lets the open page re-render with it.
+ */
+async function fetchJsonCached<T>(path: string): Promise<T> {
+  const cached = getCache.get(path);
+  if (cached) {
+    const age = Date.now() - cached.at;
+    if (age < GET_CACHE_TTL_MS) return cached.data as T;
+    if (age < GET_CACHE_MAX_STALE_MS) {
+      void revalidate<T>(path).catch(() => {});
+      return cached.data as T;
+    }
+  }
+  return revalidate<T>(path);
 }
 
 export async function checkBackendHealth(): Promise<HealthStatus> {
@@ -240,7 +287,7 @@ export async function verifyLibraryItem(itemId: string): Promise<LibraryItem> {
   const item = await fetchJson<LibraryItem>(`/api/v1/library/${itemId}/verify`, {
     method: "POST",
   });
-  invalidateApiCache();
+  markApiCacheStale();
   return item;
 }
 
@@ -248,7 +295,7 @@ export async function verifyAllLibraryItems(): Promise<{ verified_count: number 
   const result = await fetchJson<{ verified_count: number }>(`/api/v1/library/verify-all`, {
     method: "POST",
   });
-  invalidateApiCache();
+  markApiCacheStale();
   return result;
 }
 
@@ -261,7 +308,7 @@ export async function acceptAllJobCandidates(jobId: string): Promise<LibraryItem
   const items = await fetchJson<LibraryItem[]>(`/api/v1/reviews/jobs/${jobId}/accept-all`, {
     method: "POST",
   });
-  invalidateApiCache();
+  markApiCacheStale();
   return items;
 }
 
@@ -286,7 +333,7 @@ export async function updateLibraryItem(
     method: "PATCH",
     body: JSON.stringify(payload),
   });
-  invalidateApiCache();
+  markApiCacheStale();
   return item;
 }
 
@@ -306,7 +353,7 @@ export async function retryProcessingJob(jobId: string): Promise<ProcessingJob> 
   const job = await fetchJson<ProcessingJob>(`/api/v1/jobs/${jobId}/retry`, {
     method: "POST",
   });
-  invalidateApiCache();
+  markApiCacheStale();
   return job;
 }
 
@@ -341,7 +388,7 @@ export async function deleteSourceAsset(assetId: string): Promise<{ success: boo
     `/api/v1/assets/${assetId}`,
     { method: "DELETE" }
   );
-  invalidateApiCache();
+  markApiCacheStale();
   return result;
 }
 
@@ -354,7 +401,7 @@ export async function linkSourceToLibraryItem(
     library_item_id: string;
     source_asset_id: string;
   }>(`/api/v1/library/${itemId}/sources/${assetId}`, { method: "POST" });
-  invalidateApiCache();
+  markApiCacheStale();
   return result;
 }
 
@@ -452,7 +499,7 @@ export async function updateReviewCandidate(
     `/api/v1/reviews/candidates/${id}`,
     { method: "PATCH", body: JSON.stringify(payload) }
   );
-  invalidateApiCache();
+  markApiCacheStale();
   return candidate;
 }
 
@@ -464,7 +511,7 @@ export async function acceptReviewCandidate(
     method: "POST",
     body: JSON.stringify(payload),
   });
-  invalidateApiCache();
+  markApiCacheStale();
   return item;
 }
 
@@ -475,7 +522,7 @@ export async function rejectReviewCandidate(
     `/api/v1/reviews/candidates/${id}/reject`,
     { method: "POST" }
   );
-  invalidateApiCache();
+  markApiCacheStale();
   return result;
 }
 
