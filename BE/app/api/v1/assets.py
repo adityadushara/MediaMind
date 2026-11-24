@@ -197,9 +197,12 @@ async def upload_assets(
                 direct_url=None,
                 consumption_status="want_to_consume",
                 release_year=None,
-                overview="AI is analyzing screenshot details...",
+                overview=None,
                 cover_image_url=f"/api/v1/assets/media/{stored_path.lstrip('/')}",
-                verification_status="verified",
+                # A fresh upload has not been identified or reviewed yet; only the
+                # processing worker (auto_accepted/needs_review) or the user
+                # (verified/manual_entry) may promote it.
+                verification_status="unverified",
             )
             db.add(initial_item)
 

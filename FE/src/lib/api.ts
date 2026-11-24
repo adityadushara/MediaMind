@@ -1,6 +1,7 @@
 import {
   HealthStatus,
   LibraryItemListResponse,
+  LibraryStats,
   LibraryItem,
   LibraryItemDetail,
   ProcessingJob,
@@ -17,7 +18,7 @@ import {
 } from "@/types";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL !== undefined ? process.env.NEXT_PUBLIC_API_URL : "";
 
 let cachedAccessToken: string | null = null;
 
@@ -53,9 +54,17 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
       if (data?.session?.access_token) {
         setCachedAccessToken(data.session.access_token);
         headers["Authorization"] = `Bearer ${data.session.access_token}`;
+      } else {
+        const fallback = getAccessToken();
+        if (fallback) {
+          headers["Authorization"] = `Bearer ${fallback}`;
+        }
       }
     } catch {
-      // In offline or fallback mode, omit header
+      const fallback = getAccessToken();
+      if (fallback) {
+        headers["Authorization"] = `Bearer ${fallback}`;
+      }
     }
   }
   return headers;
@@ -91,6 +100,19 @@ export function resolveMediaUrl(url: string | null | undefined): string {
   return fullUrl;
 }
 
+async function parseErrorDetail(res: Response, fallbackPrefix: string): Promise<string> {
+  const errorBody = await res.text().catch(() => "");
+  let detail = "";
+  try {
+    const parsed = JSON.parse(errorBody) as { detail?: unknown; error?: unknown };
+    if (typeof parsed.detail === "string") detail = parsed.detail;
+    else if (typeof parsed.error === "string") detail = parsed.error;
+  } catch {
+    detail = errorBody;
+  }
+  return detail || `${fallbackPrefix} (${res.status} ${res.statusText})`;
+}
+
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path}`;
   const authHeaders = await getAuthHeaders();
@@ -105,8 +127,7 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   });
 
   if (!res.ok) {
-    const errorBody = await res.text().catch(() => "");
-    throw new Error(`API error ${res.status}: ${errorBody || res.statusText}`);
+    throw new Error(await parseErrorDetail(res, "Request failed"));
   }
 
   return res.json() as Promise<T>;
@@ -114,16 +135,24 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
 
 export async function checkBackendHealth(): Promise<HealthStatus> {
   try {
-    return await fetchJson<HealthStatus>("/health");
+    const res = await fetch(`${API_BASE}/health`, { cache: "no-store" });
+    // A degraded system intentionally reports HTTP 503, but the body is a
+    // valid health report. Parsing it lets the UI distinguish "degraded"
+    // from "unreachable" instead of showing the assistant as offline.
+    if (res.ok || res.status === 503) {
+      return (await res.json()) as HealthStatus;
+    }
   } catch {
-    return {
-      status: "unreachable",
-      version: "unknown",
-      environment: "offline",
-      database: "disconnected",
-      storage: "disconnected",
-    };
+    // Network/parse failure: fall through to the unreachable report.
   }
+
+  return {
+    status: "unreachable",
+    version: "unknown",
+    environment: "offline",
+    database: "disconnected",
+    storage: "disconnected",
+  };
 }
 
 export async function getUserProfile(): Promise<UserProfile> {
@@ -137,6 +166,7 @@ export async function getLibraryItems(params?: {
   verification_status?: string;
   search?: string;
   sort_by?: string;
+  sort_order?: "asc" | "desc";
   order?: "asc" | "desc";
   limit?: number;
   offset?: number;
@@ -148,12 +178,17 @@ export async function getLibraryItems(params?: {
   if (params?.verification_status) searchParams.set("verification_status", params.verification_status);
   if (params?.search) searchParams.set("search", params.search);
   if (params?.sort_by) searchParams.set("sort_by", params.sort_by);
-  if (params?.order) searchParams.set("order", params.order);
+  const order = params?.sort_order || params?.order;
+  if (order) searchParams.set("sort_order", order);
   if (params?.limit) searchParams.set("limit", params.limit.toString());
   if (params?.offset) searchParams.set("offset", params.offset.toString());
 
   const qs = searchParams.toString();
   return fetchJson<LibraryItemListResponse>(`/api/v1/library${qs ? `?${qs}` : ""}`);
+}
+
+export async function getLibraryStats(): Promise<LibraryStats> {
+  return fetchJson<LibraryStats>("/api/v1/library/stats");
 }
 
 export async function verifyLibraryItem(itemId: string): Promise<LibraryItem> {
@@ -202,10 +237,13 @@ export async function updateLibraryItem(
 
 export async function deleteLibraryItem(id: string): Promise<void> {
   const authHeaders = await getAuthHeaders();
-  await fetch(`${API_BASE}/api/v1/library/${id}`, {
+  const res = await fetch(`${API_BASE}/api/v1/library/${id}`, {
     method: "DELETE",
     headers: authHeaders,
   });
+  if (!res.ok) {
+    throw new Error(await parseErrorDetail(res, "Failed to delete item"));
+  }
 }
 
 export async function retryProcessingJob(jobId: string): Promise<ProcessingJob> {
@@ -260,10 +298,13 @@ export async function unlinkSourceFromLibraryItem(
   assetId: string
 ): Promise<void> {
   const authHeaders = await getAuthHeaders();
-  await fetch(`${API_BASE}/api/v1/library/${itemId}/sources/${assetId}`, {
+  const res = await fetch(`${API_BASE}/api/v1/library/${itemId}/sources/${assetId}`, {
     method: "DELETE",
     headers: authHeaders,
   });
+  if (!res.ok) {
+    throw new Error(await parseErrorDetail(res, "Failed to unlink screenshot"));
+  }
 }
 
 export async function uploadScreenshotFiles(
@@ -304,8 +345,7 @@ export async function uploadScreenshotFiles(
   });
 
   if (!res.ok) {
-    const errorBody = await res.text().catch(() => "");
-    throw new Error(`Upload failed [${res.status}]: ${errorBody}`);
+    throw new Error(await parseErrorDetail(res, "Upload failed"));
   }
 
   return res.json();

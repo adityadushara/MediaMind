@@ -1,28 +1,31 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Library,
-  UploadCloud,
   Image as ImageIcon,
-  CheckCircle2,
   BookMarked,
   Server,
   Info,
   LogOut,
   LogIn,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { HealthStatus } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 
+export const OPEN_MOBILE_NAV_EVENT = "mediamind:open-mobile-nav";
+
 interface SidebarProps {
   health: HealthStatus | null;
   pendingReviewCount?: number;
   onOpenUpload?: () => void;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 interface NavItem {
@@ -32,33 +35,93 @@ interface NavItem {
   badge?: number;
 }
 
-export function Sidebar({ health, pendingReviewCount = 0, onOpenUpload }: SidebarProps) {
+export function Sidebar({
+  health,
+  pendingReviewCount = 0,
+  isMobileOpen,
+  onCloseMobile,
+}: SidebarProps) {
   const pathname = usePathname();
   const { user, signOut, openAuthModal } = useAuth();
+  const [internalMobileOpen, setInternalMobileOpen] = useState(false);
+
+  const mobileOpen = isMobileOpen ?? internalMobileOpen;
+  const closeMobile = () => {
+    setInternalMobileOpen(false);
+    onCloseMobile?.();
+  };
+
+  useEffect(() => {
+    const handleOpen = () => setInternalMobileOpen(true);
+    window.addEventListener(OPEN_MOBILE_NAV_EVENT, handleOpen);
+    return () => window.removeEventListener(OPEN_MOBILE_NAV_EVENT, handleOpen);
+  }, []);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setInternalMobileOpen(false);
+        onCloseMobile?.();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [mobileOpen, onCloseMobile]);
 
   const navItems: NavItem[] = [
     { label: "Dashboard", href: "/", icon: LayoutDashboard },
-    { label: "My Library", href: "/library", icon: Library },
+    {
+      label: "My Library",
+      href: "/library",
+      icon: Library,
+      badge: pendingReviewCount > 0 ? pendingReviewCount : undefined,
+    },
     { label: "Saved Screenshots", href: "/sources", icon: ImageIcon },
     { label: "About MediaMind", href: "/about", icon: Info },
   ];
 
-  const isHealthy = health?.status === "healthy";
+  // `health` is null while the first probe is in flight. Reporting "Offline"
+  // then is a false alarm, so the status is explicitly "Checking…" until the
+  // probe answers.
+  const isChecking = health === null;
+  const healthStatus = health?.status ?? null;
+  const isHealthy = healthStatus === "healthy";
+  const isDegraded = healthStatus === "degraded";
+  const statusLabel = isChecking
+    ? "Checking…"
+    : isHealthy
+      ? "Ready"
+      : isDegraded
+        ? "Degraded"
+        : "Offline";
 
-  return (
-    <aside className="w-64 border-r border-stone-200 bg-[#F7F5F0] text-stone-800 flex flex-col justify-between h-screen sticky top-0 shrink-0 select-none">
+  const renderSidebarContent = (isDrawer: boolean) => (
+    <>
       <div>
         {/* Brand Header */}
-        <div className="h-16 flex items-center gap-3 px-6 border-b border-stone-200/80 bg-white/50">
-          <div className="h-9 w-9 rounded-xl bg-amber-600 flex items-center justify-center shadow-sm shadow-amber-600/20 text-white">
-            <BookMarked className="h-5 w-5" />
+        <div className="h-16 flex items-center justify-between gap-3 px-6 border-b border-stone-200/80 bg-white/50">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-amber-600 flex items-center justify-center shadow-sm shadow-amber-600/20 text-white">
+              <BookMarked className="h-5 w-5" />
+            </div>
+            <div>
+              <span className="font-bold text-lg tracking-tight text-stone-900">MediaMind</span>
+              <span className="block text-[11px] text-stone-500 font-medium">
+                Study & Media Library
+              </span>
+            </div>
           </div>
-          <div>
-            <span className="font-bold text-lg tracking-tight text-stone-900">MediaMind</span>
-            <span className="block text-[11px] text-stone-500 font-medium">
-              Study & Media Library
-            </span>
-          </div>
+          {isDrawer && (
+            <button
+              type="button"
+              onClick={closeMobile}
+              aria-label="Close navigation menu"
+              className="p-1.5 rounded-lg text-stone-500 hover:text-stone-900 hover:bg-stone-200/60 transition-colors cursor-pointer"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          )}
         </div>
 
         {/* Navigation Links */}
@@ -71,6 +134,9 @@ export function Sidebar({ health, pendingReviewCount = 0, onOpenUpload }: Sideba
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={() => {
+                  if (isDrawer) closeMobile();
+                }}
                 className={cn(
                   "flex items-center justify-between px-3.5 py-3 rounded-xl text-sm font-medium transition-all",
                   isActive
@@ -104,16 +170,28 @@ export function Sidebar({ health, pendingReviewCount = 0, onOpenUpload }: Sideba
             <span
               className={cn(
                 "h-2 w-2 rounded-full",
-                isHealthy ? "bg-emerald-500" : "bg-rose-500"
+                isChecking
+                  ? "bg-stone-400 animate-pulse"
+                  : isHealthy
+                    ? "bg-emerald-500"
+                    : isDegraded
+                      ? "bg-amber-500"
+                      : "bg-rose-500"
               )}
             />
             <span
               className={cn(
                 "text-xs font-semibold",
-                isHealthy ? "text-emerald-700" : "text-rose-600"
+                isChecking
+                  ? "text-stone-500"
+                  : isHealthy
+                    ? "text-emerald-700"
+                    : isDegraded
+                      ? "text-amber-700"
+                      : "text-rose-600"
               )}
             >
-              {isHealthy ? "Ready" : "Offline"}
+              {statusLabel}
             </span>
           </div>
         </div>
@@ -154,7 +232,10 @@ export function Sidebar({ health, pendingReviewCount = 0, onOpenUpload }: Sideba
             </div>
             <button
               type="button"
-              onClick={() => openAuthModal("signin")}
+              onClick={() => {
+                if (isDrawer) closeMobile();
+                openAuthModal("signin");
+              }}
               title="Sign In"
               className="px-2 py-1 rounded-lg text-[11px] font-bold text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors cursor-pointer flex items-center gap-1"
             >
@@ -164,6 +245,34 @@ export function Sidebar({ health, pendingReviewCount = 0, onOpenUpload }: Sideba
           </div>
         )}
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-64 border-r border-stone-200 bg-[#F7F5F0] text-stone-800 flex-col justify-between h-screen sticky top-0 shrink-0 select-none">
+        {renderSidebarContent(false)}
+      </aside>
+
+      {/* Mobile Slide-Over Drawer */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          <div
+            className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs"
+            onClick={closeMobile}
+            aria-hidden="true"
+          />
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="Navigation menu"
+            className="relative z-10 w-72 max-w-[85vw] border-r border-stone-200 bg-[#F7F5F0] text-stone-800 flex flex-col justify-between h-full shadow-2xl select-none"
+          >
+            {renderSidebarContent(true)}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }

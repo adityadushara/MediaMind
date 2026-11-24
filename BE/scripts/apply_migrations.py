@@ -23,6 +23,7 @@ MIGRATION_FILES = [
     "migrations/006_m4_metadata_and_deduplication.sql",
     "migrations/007_add_article_and_newsletter_types.sql",
     "migrations/008_auto_confirm_users.sql",
+    "migrations/009_fix_verification_status_and_storage.sql",
 ]
 
 def apply_migrations():

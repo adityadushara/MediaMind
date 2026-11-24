@@ -81,6 +81,13 @@ export interface LibraryItemListResponse {
   items: LibraryItem[];
 }
 
+export interface LibraryStats {
+  total: number;
+  by_status: Record<ConsumptionStatus, number>;
+  needs_review: number;
+  unverified: number;
+}
+
 export interface JobCandidateSummary {
   id: string;
   suggested_title: string;

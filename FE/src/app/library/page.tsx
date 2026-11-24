@@ -18,11 +18,13 @@ import {
   unlinkSourceFromLibraryItem,
   getSubcategories,
   resolveMediaUrl,
+  verifyLibraryItem,
 } from "@/lib/api";
 import { CustomSelect, SelectOption } from "@/components/ui/CustomSelect";
 import { ImageViewerModal } from "@/components/ui/ImageViewerModal";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { AuthGuard } from "@/components/auth/AuthGuard";
+import { useAuth } from "@/context/AuthContext";
 import {
   HealthStatus,
   LibraryItem,
@@ -81,10 +83,21 @@ const SORT_OPTIONS: SelectOption[] = [
   { value: "user_rating", label: "My Rating" },
 ];
 
+// Human verification states, kept separate from AI confidence. "Needs Review"
+// is where uncertain AI matches live until the user confirms them.
+const VERIFICATION_FILTER_OPTIONS: SelectOption[] = [
+  { value: "all", label: "All Entries" },
+  { value: "needs_review", label: "Needs Review", icon: <Sparkles className="h-3.5 w-3.5 text-amber-600" /> },
+  { value: "unverified", label: "AI Analyzing", icon: <Loader2 className="h-3.5 w-3.5 text-stone-500" /> },
+  { value: "auto_accepted", label: "AI Accepted", icon: <Check className="h-3.5 w-3.5 text-blue-600" /> },
+  { value: "verified", label: "Verified", icon: <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> },
+  { value: "manual_entry", label: "Manual Entry", icon: <Edit3 className="h-3.5 w-3.5 text-stone-500" /> },
+];
+
 const CARD_STATUS_OPTIONS: SelectOption[] = [
-  { value: "want_to_consume", label: "Want to Study" },
+  { value: "want_to_consume", label: "Want to Study/Watch" },
   { value: "consuming", label: "Reading/Watching" },
-  { value: "completed", label: "Finished" },
+  { value: "completed", label: "Completed" },
   { value: "on_hold", label: "On Hold" },
   { value: "dropped", label: "Dropped" },
 ];
@@ -121,13 +134,16 @@ function MediaItemThumbnail({
   const [src, setSrc] = useState<string>(resolveMediaUrl(primaryUrl));
   const [triedFallback, setTriedFallback] = useState(false);
   const [failed, setFailed] = useState(!primaryUrl);
+  const [syncedPrimary, setSyncedPrimary] = useState(primaryUrl);
 
-  useEffect(() => {
-    const currentPrimary = item.cover_image_url || item.screenshot_url || "";
-    setSrc(resolveMediaUrl(currentPrimary));
+  // Reset derived image state when the item's media changes. Adjusting state
+  // during render is the recommended alternative to a cascading effect.
+  if (syncedPrimary !== primaryUrl) {
+    setSyncedPrimary(primaryUrl);
+    setSrc(resolveMediaUrl(primaryUrl));
     setTriedFallback(false);
-    setFailed(!currentPrimary);
-  }, [item.cover_image_url, item.screenshot_url]);
+    setFailed(!primaryUrl);
+  }
 
   const handleError = () => {
     if (!triedFallback && fallbackUrl) {
@@ -138,14 +154,20 @@ function MediaItemThumbnail({
     }
   };
 
+  // An item with no preserved screenshot has nothing to inspect; offering
+  // "Zoom Image" there opened an empty viewer.
+  const hasImage = !failed && Boolean(src);
+
   if (viewMode === "list") {
     return (
       <div
-        onClick={onInspect}
-        className="h-16 w-16 rounded-xl overflow-hidden border border-stone-200 bg-stone-100 shrink-0 cursor-pointer relative group/listthumb flex items-center justify-center shadow-2xs"
-        title="Click to view full screenshot"
+        onClick={hasImage ? onInspect : undefined}
+        className={`h-16 w-16 rounded-xl overflow-hidden border border-stone-200 bg-stone-100 shrink-0 relative flex items-center justify-center shadow-2xs ${
+          hasImage ? "cursor-pointer group/listthumb" : ""
+        }`}
+        title={hasImage ? "Click to view full screenshot" : undefined}
       >
-        {!failed && src ? (
+        {hasImage ? (
           /* eslint-disable-next-line @next/next/no-img-element */
           <img
             src={src}
@@ -165,11 +187,13 @@ function MediaItemThumbnail({
 
   return (
     <div
-      onClick={onInspect}
-      className="relative w-full h-48 rounded-xl overflow-hidden bg-stone-100 border border-stone-200/90 mb-3 cursor-pointer group/thumb flex items-center justify-center shadow-2xs"
-      title="Click to view full screenshot & inspect"
+      onClick={hasImage ? onInspect : undefined}
+      className={`relative w-full h-48 rounded-xl overflow-hidden bg-stone-100 border border-stone-200/90 mb-3 flex items-center justify-center shadow-2xs ${
+        hasImage ? "cursor-pointer group/thumb" : ""
+      }`}
+      title={hasImage ? "Click to view full screenshot & inspect" : undefined}
     >
-      {!failed && src ? (
+      {hasImage ? (
         /* eslint-disable-next-line @next/next/no-img-element */
         <img
           src={src}
@@ -182,7 +206,7 @@ function MediaItemThumbnail({
 
       <div
         className={`${
-          !failed && src ? "hidden" : "flex"
+          hasImage ? "hidden" : "flex"
         } flex-col items-center justify-center gap-1.5 text-stone-400 p-4 text-center`}
       >
         <div className={`p-3 rounded-2xl border ${badge.bg}`}>
@@ -193,18 +217,21 @@ function MediaItemThumbnail({
         </span>
       </div>
 
-      <div className="absolute inset-0 bg-stone-900/0 group-hover/thumb:bg-stone-900/20 transition-colors flex items-center justify-center">
-        <span className="opacity-0 group-hover/thumb:opacity-100 transition-opacity px-3 py-1.5 rounded-lg bg-stone-900/85 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md backdrop-blur-xs">
-          <ZoomIn className="h-3.5 w-3.5" />
-          <span>Zoom Image</span>
-        </span>
-      </div>
+      {hasImage && (
+        <div className="absolute inset-0 bg-stone-900/0 group-hover/thumb:bg-stone-900/20 transition-colors flex items-center justify-center">
+          <span className="opacity-0 group-hover/thumb:opacity-100 transition-opacity px-3 py-1.5 rounded-lg bg-stone-900/85 text-white text-xs font-semibold flex items-center gap-1.5 shadow-md backdrop-blur-xs">
+            <ZoomIn className="h-3.5 w-3.5" />
+            <span>Zoom Image</span>
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function LibraryPage() {
   const router = useRouter();
+  const { user, isLoading: isAuthLoading } = useAuth();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -214,11 +241,18 @@ export default function LibraryPage() {
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>("all");
   const [subcategories, setSubcategories] = useState<string[]>([]);
   const [selectedStatus, setSelectedStatus] = useState<string>("all");
+  const [selectedVerification, setSelectedVerification] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState<string>("created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [urlParamsReady, setUrlParamsReady] = useState(false);
+  const fetchSeqRef = useRef(0);
   const [isAskAIOpen, setIsAskAIOpen] = useState(false);
-  const [viewerImage, setViewerImage] = useState<{ url: string; title: string } | null>(null);
+  const [viewerImage, setViewerImage] = useState<{
+    url: string;
+    fallbackUrl?: string;
+    title: string;
+  } | null>(null);
 
   // Detail Drawer state
   const [selectedItemDetail, setSelectedItemDetail] = useState<LibraryItemDetail | null>(null);
@@ -226,6 +260,7 @@ export default function LibraryPage() {
   const [availableSources, setAvailableSources] = useState<SourceAsset[]>([]);
   const [selectedSourceToLink, setSelectedSourceToLink] = useState<string>("");
   const [isLinkingLoading, setIsLinkingLoading] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   // Manual Add Modal state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -255,6 +290,9 @@ export default function LibraryPage() {
   const hasDraggedRef = useRef(false);
   const startXRef = useRef(0);
   const scrollLeftRef = useRef(0);
+  // Category tabs overflow horizontally on narrower screens with no visible
+  // scrollbar, which hid whole content types. Track the edges to show arrows.
+  const [tabScroll, setTabScroll] = useState({ left: false, right: false });
 
   useEffect(() => {
     const el = categoryTabsRef.current;
@@ -308,23 +346,42 @@ export default function LibraryPage() {
       }
     };
 
+    const updateScrollHints = () => {
+      const maxLeft = el.scrollWidth - el.clientWidth;
+      setTabScroll({
+        left: el.scrollLeft > 1,
+        right: maxLeft > 1 && el.scrollLeft < maxLeft - 1,
+      });
+    };
+
     el.addEventListener("wheel", handleWheel, { passive: false });
     el.addEventListener("mousedown", handleMouseDown);
+    el.addEventListener("scroll", updateScrollHints, { passive: true });
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("resize", updateScrollHints);
     el.addEventListener("click", handleClickCapture, true);
+    updateScrollHints();
 
     return () => {
       el.removeEventListener("wheel", handleWheel);
       el.removeEventListener("mousedown", handleMouseDown);
+      el.removeEventListener("scroll", updateScrollHints);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("resize", updateScrollHints);
       el.removeEventListener("click", handleClickCapture, true);
     };
-  }, []);
+    // The tabs only exist once AuthGuard renders its children, so re-attach
+    // when the authenticated user becomes available.
+  }, [user]);
 
-  const refreshItems = useCallback(async () => {
-    setIsLoading(true);
+  const refreshItems = useCallback(async (options?: { silent?: boolean }) => {
+    if (!user) return;
+    const seq = ++fetchSeqRef.current;
+    // Polling must not flash the full-page spinner over content the user is
+    // reading, so background refreshes skip the loading state.
+    if (!options?.silent) setIsLoading(true);
     try {
       const params: Record<string, string> = {
         sort_by: sortBy,
@@ -333,16 +390,28 @@ export default function LibraryPage() {
       if (selectedType !== "all") params.content_type = selectedType;
       if (selectedSubcategory !== "all") params.subcategory = selectedSubcategory;
       if (selectedStatus !== "all") params.consumption_status = selectedStatus;
+      if (selectedVerification !== "all") params.verification_status = selectedVerification;
       if (searchQuery.trim()) params.search = searchQuery.trim();
 
       const res = await getLibraryItems(params);
-      setItems(res.items);
+      if (seq === fetchSeqRef.current) {
+        setItems(Array.isArray(res?.items) ? res.items : []);
+      }
     } catch {
       // keep existing
     } finally {
-      setIsLoading(false);
+      if (!options?.silent && seq === fetchSeqRef.current) setIsLoading(false);
     }
-  }, [selectedType, selectedSubcategory, selectedStatus, searchQuery, sortBy, sortOrder]);
+  }, [
+    user,
+    selectedType,
+    selectedSubcategory,
+    selectedStatus,
+    selectedVerification,
+    searchQuery,
+    sortBy,
+    sortOrder,
+  ]);
 
   useEffect(() => {
     let isSubscribed = true;
@@ -355,16 +424,31 @@ export default function LibraryPage() {
   }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get("upload") === "true") {
-        setIsUploadOpen(true);
-      }
+    if (typeof window === "undefined") {
+      queueMicrotask(() => setUrlParamsReady(true));
+      return;
     }
+    const params = new URLSearchParams(window.location.search);
+    const shouldOpenUpload = params.get("upload") === "true";
+    const urlSearch = params.get("search");
+    const urlVerification = params.get("verification_status");
+    // Defer to a microtask: opening the dialog and applying deep-link filters
+    // are side effects triggered by the URL, not synchronous render derivations.
+    queueMicrotask(() => {
+      if (shouldOpenUpload) setIsUploadOpen(true);
+      if (urlSearch) setSearchQuery(urlSearch);
+      if (urlVerification) setSelectedVerification(urlVerification);
+      setUrlParamsReady(true);
+    });
   }, []);
 
   // Fetch subcategories when content type changes
   useEffect(() => {
+    if (isAuthLoading) return;
+    if (!user) {
+      queueMicrotask(() => setSubcategories([]));
+      return;
+    }
     let isSubscribed = true;
     const typeParam = selectedType !== "all" ? selectedType : undefined;
     getSubcategories(typeParam).then((subs) => {
@@ -375,10 +459,21 @@ export default function LibraryPage() {
     return () => {
       isSubscribed = false;
     };
-  }, [selectedType]);
+  }, [selectedType, user, isAuthLoading]);
 
   useEffect(() => {
+    if (!urlParamsReady || isAuthLoading) return;
+    if (!user) {
+      queueMicrotask(() => {
+        setItems([]);
+        setSelectedItemDetail(null);
+        setIsLoading(false);
+      });
+      return;
+    }
+
     let isSubscribed = true;
+    const seq = ++fetchSeqRef.current;
 
     async function fetchItems() {
       try {
@@ -389,15 +484,16 @@ export default function LibraryPage() {
         if (selectedType !== "all") params.content_type = selectedType;
         if (selectedSubcategory !== "all") params.subcategory = selectedSubcategory;
         if (selectedStatus !== "all") params.consumption_status = selectedStatus;
+        if (selectedVerification !== "all") params.verification_status = selectedVerification;
         if (searchQuery.trim()) params.search = searchQuery.trim();
 
         const res = await getLibraryItems(params);
-        if (isSubscribed) {
-          setItems(res.items);
+        if (isSubscribed && seq === fetchSeqRef.current) {
+          setItems(Array.isArray(res?.items) ? res.items : []);
           setIsLoading(false);
         }
       } catch {
-        if (isSubscribed) {
+        if (isSubscribed && seq === fetchSeqRef.current) {
           setIsLoading(false);
         }
       }
@@ -408,7 +504,38 @@ export default function LibraryPage() {
     return () => {
       isSubscribed = false;
     };
-  }, [selectedType, selectedSubcategory, selectedStatus, searchQuery, sortBy, sortOrder]);
+  }, [
+    urlParamsReady,
+    isAuthLoading,
+    user,
+    selectedType,
+    selectedSubcategory,
+    selectedStatus,
+    selectedVerification,
+    searchQuery,
+    sortBy,
+    sortOrder,
+  ]);
+
+  const hasActiveFilters =
+    selectedType !== "all" ||
+    selectedSubcategory !== "all" ||
+    selectedStatus !== "all" ||
+    selectedVerification !== "all" ||
+    searchQuery.trim() !== "";
+
+  // Newly uploaded placeholders stay "unverified" until the AI worker finishes.
+  // Poll so the card swaps from "Analyzing" to its result without a reload.
+  const hasUnverifiedItems = items.some(
+    (item) => item.verification_status === "unverified"
+  );
+  useEffect(() => {
+    if (isAuthLoading || !user || !hasUnverifiedItems) return;
+    const timer = setInterval(() => {
+      refreshItems({ silent: true });
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [hasUnverifiedItems, refreshItems, user, isAuthLoading]);
 
   const handleOpenDetail = async (item: LibraryItem) => {
     setIsLinkingOpen(false);
@@ -420,12 +547,47 @@ export default function LibraryPage() {
     }
   };
 
+  // Confirming a match is a human action recorded separately from AI
+  // confidence, so it lives in the evidence drawer next to the original.
+  const handleVerifyItem = async () => {
+    if (!selectedItemDetail) return;
+    setIsVerifying(true);
+    try {
+      const updated = await verifyLibraryItem(selectedItemDetail.id);
+      setSelectedItemDetail((prev) => (prev ? { ...prev, ...updated } : prev));
+      setItems((prev) =>
+        prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item))
+      );
+      showToast("Marked as verified.");
+    } catch (err) {
+      showToast(
+        "Failed to verify: " + (err instanceof Error ? err.message : String(err)),
+        "error"
+      );
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const handleLoadAvailableSources = async () => {
     try {
       const res = await getSourceAssets({ limit: 50 });
-      setAvailableSources(res.items);
-      if (res.items.length > 0) {
-        setSelectedSourceToLink(res.items[0].id);
+      const rawSources = res?.items || [];
+      // Screenshots already attached to this item must not be offered again;
+      // picking one used to fail with an opaque 500.
+      const linkedIds = new Set(
+        (selectedItemDetail?.sources || []).map((source) => source.id)
+      );
+      const linkable = (Array.isArray(rawSources) ? rawSources : []).filter(
+        (source) => !linkedIds.has(source.id)
+      );
+      setAvailableSources(linkable);
+      if (linkable.length === 0) {
+        showToast("Every saved screenshot is already attached to this item.", "error");
+        return;
+      }
+      if (linkable.length > 0) {
+        setSelectedSourceToLink(linkable[0].id);
       }
       setIsLinkingOpen(true);
     } catch (e) {
@@ -560,6 +722,7 @@ export default function LibraryPage() {
       setNewCreator("");
       setNewSubcategory("");
       setNewDirectUrl("");
+      setNewStatus("want_to_consume");
       setNewOverview("");
       showToast(`"${created.title}" added to your library!`);
     } catch (err) {
@@ -587,18 +750,36 @@ export default function LibraryPage() {
     try {
       const updated = await updateLibraryItem(editingItem.id, {
         title: editTitle.trim(),
-        creator: editCreator.trim() || undefined,
+        creator: editCreator.trim() || null,
         content_type: editType,
-        subcategory: editSubcategory.trim() || undefined,
-        direct_url: editDirectUrl.trim() || undefined,
+        subcategory: editSubcategory.trim() || null,
+        direct_url: editDirectUrl.trim() || null,
         consumption_status: editStatus,
-        overview: editOverview.trim() || undefined,
-        user_rating: editRating > 0 ? editRating : undefined,
+        overview: editOverview.trim() || null,
+        user_rating: editRating > 0 ? editRating : null,
         verification_status: "verified",
       });
-      setItems((prev) => prev.map((it) => (it.id === editingItem.id ? updated : it)));
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === editingItem.id
+            ? {
+                ...it,
+                ...updated,
+                screenshot_url: updated.screenshot_url ?? it.screenshot_url,
+              }
+            : it
+        )
+      );
       if (selectedItemDetail?.id === editingItem.id) {
-        setSelectedItemDetail((prev) => (prev ? { ...prev, ...updated } : null));
+        setSelectedItemDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                ...updated,
+                screenshot_url: updated.screenshot_url ?? prev.screenshot_url,
+              }
+            : null
+        );
       }
       setEditingItem(null);
       showToast(`"${updated.title}" updated successfully.`);
@@ -693,7 +874,7 @@ export default function LibraryPage() {
           onOpenAskAI={() => setIsAskAIOpen(true)}
         />
 
-        <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6 min-w-0">
           {/* Toast Notification */}
           {toast && (
             <div
@@ -752,35 +933,58 @@ export default function LibraryPage() {
           </div>
 
           {/* Primary Category Tabs */}
-          <div
-            ref={categoryTabsRef}
-            className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none no-scrollbar overscroll-contain select-none cursor-grab active:cursor-grabbing"
-            style={{
-              scrollbarWidth: "none",
-              msOverflowStyle: "none",
-              WebkitOverflowScrolling: "touch",
-            }}
-          >
-            {typeTabs.map((tab) => {
-              const isActive = selectedType === tab.value;
-              return (
-                <button
-                  key={tab.value}
-                  onClick={() => {
-                    setSelectedType(tab.value);
-                    setSelectedSubcategory("all");
-                  }}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap shrink-0 border ${
-                    isActive
-                      ? "bg-amber-700 text-white border-amber-700 shadow-sm"
-                      : "bg-white text-stone-700 border-stone-200 hover:bg-stone-100 hover:text-stone-900"
-                  }`}
-                >
-                  <span>{tab.emoji}</span>
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
+          <div className="relative">
+            <div
+              ref={categoryTabsRef}
+              className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none no-scrollbar overscroll-contain select-none cursor-grab active:cursor-grabbing"
+              style={{
+                scrollbarWidth: "none",
+                msOverflowStyle: "none",
+                WebkitOverflowScrolling: "touch",
+              }}
+            >
+              {typeTabs.map((tab) => {
+                const isActive = selectedType === tab.value;
+                return (
+                  <button
+                    key={tab.value}
+                    onClick={() => {
+                      setSelectedType(tab.value);
+                      setSelectedSubcategory("all");
+                    }}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap shrink-0 border ${
+                      isActive
+                        ? "bg-amber-700 text-white border-amber-700 shadow-sm"
+                        : "bg-white text-stone-700 border-stone-200 hover:bg-stone-100 hover:text-stone-900"
+                    }`}
+                  >
+                    <span>{tab.emoji}</span>
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {tabScroll.left && (
+              <button
+                type="button"
+                onClick={() => categoryTabsRef.current?.scrollBy({ left: -320, behavior: "smooth" })}
+                aria-label="Scroll categories left"
+                className="absolute left-0 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white border border-stone-200 shadow-md flex items-center justify-center text-stone-700 hover:bg-stone-50 cursor-pointer"
+              >
+                <span aria-hidden="true">‹</span>
+              </button>
+            )}
+            {tabScroll.right && (
+              <button
+                type="button"
+                onClick={() => categoryTabsRef.current?.scrollBy({ left: 320, behavior: "smooth" })}
+                aria-label="Scroll categories right"
+                className="absolute right-0 top-1/2 -translate-y-1/2 h-9 w-9 rounded-full bg-white border border-stone-200 shadow-md flex items-center justify-center text-stone-700 hover:bg-stone-50 cursor-pointer"
+              >
+                <span aria-hidden="true">›</span>
+              </button>
+            )}
           </div>
 
           {/* Subcategory / Topic Filter Pills */}
@@ -842,6 +1046,25 @@ export default function LibraryPage() {
                   options={SORT_OPTIONS}
                   size="sm"
                 />
+                <button
+                  type="button"
+                  onClick={() => setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"))}
+                  title={sortOrder === "asc" ? "Ascending — click for descending" : "Descending — click for ascending"}
+                  aria-label={sortOrder === "asc" ? "Sort ascending" : "Sort descending"}
+                  className="p-2 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-stone-600 hover:text-stone-900 transition-colors cursor-pointer"
+                >
+                  <ArrowUpDown className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">Review:</span>
+                <CustomSelect
+                  value={selectedVerification}
+                  onChange={(val) => setSelectedVerification(val)}
+                  options={VERIFICATION_FILTER_OPTIONS}
+                  size="sm"
+                />
               </div>
             </div>
 
@@ -882,21 +1105,55 @@ export default function LibraryPage() {
               <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-100 flex items-center justify-center text-amber-700">
                 <BookOpen className="h-7 w-7" />
               </div>
-              <div className="max-w-md mx-auto space-y-1">
-                <h3 className="text-lg font-bold text-stone-900">
-                  Your library shelf is ready
-                </h3>
-                <p className="text-sm text-stone-600">
-                  Take a screenshot of any book cover, YouTube video, or movie poster and drop it here. MediaMind will organize it and give you the direct link.
-                </p>
-              </div>
-              <button
-                onClick={() => setIsUploadOpen(true)}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-sm transition-all cursor-pointer"
-              >
-                <Plus className="h-4 w-4 stroke-[3]" />
-                <span>Add Your First Screenshot</span>
-              </button>
+              {hasActiveFilters ? (
+                <>
+                  <div className="max-w-md mx-auto space-y-1">
+                    <h3 className="text-lg font-bold text-stone-900">
+                      Nothing matches these filters
+                    </h3>
+                    <p className="text-sm text-stone-600">
+                      {selectedVerification === "needs_review"
+                        ? "Nothing is waiting for review right now. Every identified item has been confirmed."
+                        : "Adjust the filters or search term to see other items in your library."}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedType("all");
+                      setSelectedSubcategory("all");
+                      setSelectedStatus("all");
+                      setSelectedVerification("all");
+                      setSearchQuery("");
+                      // Drop deep-link params too, otherwise a reload re-applies them.
+                      if (typeof window !== "undefined") {
+                        window.history.replaceState({}, "", "/library");
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 text-stone-800 font-bold text-sm shadow-sm transition-all cursor-pointer"
+                  >
+                    <X className="h-4 w-4" />
+                    <span>Clear Filters</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <div className="max-w-md mx-auto space-y-1">
+                    <h3 className="text-lg font-bold text-stone-900">
+                      Your library shelf is ready
+                    </h3>
+                    <p className="text-sm text-stone-600">
+                      Take a screenshot of any book cover, YouTube video, or movie poster and drop it here. MediaMind will organize it and give you the direct link.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setIsUploadOpen(true)}
+                    className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-sm transition-all cursor-pointer"
+                  >
+                    <Plus className="h-4 w-4 stroke-[3]" />
+                    <span>Add Your First Screenshot</span>
+                  </button>
+                </>
+              )}
             </div>
           ) : viewMode === "grid" ? (
             /* Grid View */
@@ -922,6 +1179,18 @@ export default function LibraryPage() {
                               {item.subcategory}
                             </span>
                           )}
+                          {item.verification_status === "needs_review" && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-300">
+                              <Sparkles className="h-3 w-3" />
+                              Needs Review
+                            </span>
+                          )}
+                          {item.verification_status === "unverified" && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-stone-100 text-stone-600 border border-stone-300">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Analyzing
+                            </span>
+                          )}
                         </div>
 
                         <CustomSelect
@@ -940,6 +1209,12 @@ export default function LibraryPage() {
                         onInspect={() =>
                           setViewerImage({
                             url: item.screenshot_url || item.cover_image_url || "",
+                            fallbackUrl:
+                              item.screenshot_url &&
+                              item.cover_image_url &&
+                              item.screenshot_url !== item.cover_image_url
+                                ? item.cover_image_url
+                                : undefined,
                             title: item.title,
                           })
                         }
@@ -1024,6 +1299,12 @@ export default function LibraryPage() {
                             onClick={() =>
                               setViewerImage({
                                 url: item.screenshot_url || item.cover_image_url || "",
+                                fallbackUrl:
+                                  item.screenshot_url &&
+                                  item.cover_image_url &&
+                                  item.screenshot_url !== item.cover_image_url
+                                    ? item.cover_image_url
+                                    : undefined,
                                 title: item.title,
                               })
                             }
@@ -1065,6 +1346,12 @@ export default function LibraryPage() {
                         onInspect={() =>
                           setViewerImage({
                             url: item.screenshot_url || item.cover_image_url || "",
+                            fallbackUrl:
+                              item.screenshot_url &&
+                              item.cover_image_url &&
+                              item.screenshot_url !== item.cover_image_url
+                                ? item.cover_image_url
+                                : undefined,
                             title: item.title,
                           })
                         }
@@ -1083,6 +1370,18 @@ export default function LibraryPage() {
                           {item.subcategory && (
                             <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200">
                               {item.subcategory}
+                            </span>
+                          )}
+                          {item.verification_status === "needs_review" && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-300">
+                              <Sparkles className="h-3 w-3" />
+                              Needs Review
+                            </span>
+                          )}
+                          {item.verification_status === "unverified" && (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-stone-100 text-stone-600 border border-stone-300">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Analyzing
                             </span>
                           )}
                         </div>
@@ -1173,7 +1472,7 @@ export default function LibraryPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
                     Author / Creator
@@ -1202,7 +1501,7 @@ export default function LibraryPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
                     Subcategory / Topic
@@ -1218,16 +1517,30 @@ export default function LibraryPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
-                    Direct Web Link (Optional)
+                    Status
                   </label>
-                  <input
-                    type="url"
-                    value={newDirectUrl}
-                    onChange={(e) => setNewDirectUrl(e.target.value)}
-                    placeholder="https://..."
-                    className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-sm text-stone-900 focus:outline-none focus:border-amber-600 focus:bg-white"
+                  <CustomSelect
+                    value={newStatus}
+                    onChange={(val) => setNewStatus(val as ConsumptionStatus)}
+                    options={CARD_STATUS_OPTIONS}
+                    size="md"
+                    className="w-full"
+                    buttonClassName="w-full"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
+                  Direct Web Link (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={newDirectUrl}
+                  onChange={(e) => setNewDirectUrl(e.target.value)}
+                  placeholder="https://... or www.example.com"
+                  className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-sm text-stone-900 focus:outline-none focus:border-amber-600 focus:bg-white"
+                />
               </div>
 
               <div>
@@ -1296,7 +1609,7 @@ export default function LibraryPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
                     Author / Creator
@@ -1325,7 +1638,7 @@ export default function LibraryPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-1">
                     Subcategory / Topic
@@ -1359,10 +1672,10 @@ export default function LibraryPage() {
                   Direct Web Link
                 </label>
                 <input
-                  type="url"
+                  type="text"
                   value={editDirectUrl}
                   onChange={(e) => setEditDirectUrl(e.target.value)}
-                  placeholder="https://..."
+                  placeholder="https://... or www.example.com"
                   className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2 text-sm text-stone-900 focus:outline-none focus:border-amber-600 focus:bg-white"
                 />
               </div>
@@ -1497,6 +1810,33 @@ export default function LibraryPage() {
               </span>
             </div>
 
+            {selectedItemDetail.verification_status === "needs_review" && (
+              <div className="p-4 rounded-xl bg-amber-50 border border-amber-300 space-y-2">
+                <p className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  AI match needs your review
+                </p>
+                <p className="text-xs text-amber-800">
+                  Check the identified title against the preserved screenshot below before
+                  trusting it. Confirming records your verification separately from the AI
+                  confidence.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleVerifyItem}
+                  disabled={isVerifying}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-amber-400 text-amber-900 text-xs font-bold hover:bg-amber-100 transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  {isVerifying ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  <span>Confirm as verified</span>
+                </button>
+              </div>
+            )}
+
             {selectedItemDetail.direct_url && (
               <a
                 href={selectedItemDetail.direct_url}
@@ -1524,7 +1864,7 @@ export default function LibraryPage() {
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold text-stone-900 flex items-center gap-2">
                 <ImageIcon className="h-4 w-4 text-amber-600" />
-                <span>Preserved Original Screenshots ({selectedItemDetail.sources.length})</span>
+                <span>Preserved Original Screenshots ({(selectedItemDetail.sources || []).length})</span>
               </h4>
               <button
                 type="button"
@@ -1569,13 +1909,13 @@ export default function LibraryPage() {
               </div>
             )}
 
-            {selectedItemDetail.sources.length === 0 ? (
+            {(selectedItemDetail.sources || []).length === 0 ? (
               <p className="text-xs text-stone-500 italic p-4 bg-stone-50 rounded-xl border border-stone-200 text-center">
                 No screenshots linked to this item yet.
               </p>
             ) : (
               <div className="space-y-4">
-                {selectedItemDetail.sources.map((src) => (
+                {(selectedItemDetail.sources || []).map((src) => (
                   <div key={src.id} className="p-3 rounded-xl bg-stone-50 border border-stone-200 space-y-2">
                     <div className="flex items-center justify-between text-xs text-stone-600 font-semibold">
                       <span className="truncate">{src.file_name}</span>
@@ -1625,6 +1965,7 @@ export default function LibraryPage() {
         isOpen={!!viewerImage}
         onClose={() => setViewerImage(null)}
         imageUrl={viewerImage?.url}
+        fallbackUrl={viewerImage?.fallbackUrl}
         title={viewerImage?.title}
       />
 

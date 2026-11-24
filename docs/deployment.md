@@ -1,28 +1,50 @@
-# Production Deployment Guide: Vercel (Frontend) + Railway (Backend)
+# Production Deployment Guide
 
-This guide provides instructions for deploying MediaMind with the Next.js frontend hosted on **Vercel** and the FastAPI backend + background processing worker hosted on **Railway**.
+MediaMind supports two deployment options:
+1. **Option A (Recommended for 100% Vercel)**: Unified Next.js Deployment (Frontend + Server Actions + Route Handlers entirely on Vercel without Railway).
+2. **Option B (Containerized)**: Next.js Frontend on Vercel + FastAPI Backend on Railway / Render.
 
 ---
 
-## 1. Architecture Overview
+## 1. Option A: Unified Vercel Deployment (Zero Railway)
+
+In this mode, all image processing (`sharp`), multimodal AI (`@google/genai`), metadata routing, and library management run directly inside Next.js Server Actions and Route Handlers on Vercel.
 
 ```mermaid
 flowchart LR
-    User[End User] --> FE["Next.js Frontend (Vercel)"]
-    FE -->|"NEXT_PUBLIC_API_URL"| BE["FastAPI API + Worker (Railway Docker)"]
-    FE -->|"NEXT_PUBLIC_SUPABASE_URL"| SupaAuth["Supabase Auth & Storage"]
-    BE -->|"DATABASE_URL"| SupaDB["Supabase PostgreSQL"]
-    BE -->|"GEMINI_API_KEY"| Gemini["Google Gemini Multimodal API"]
+    User[End User] --> FE["MediaMind Next.js (All-in-one on Vercel)"]
+    FE -->|"Auth & Storage"| SupaStorage["Supabase (PostgreSQL + Auth + Storage)"]
+    FE -->|"GEMINI_API_KEY"| Gemini["Google Gemini Multimodal API"]
 ```
 
-- **Frontend**: Next.js App Router deployed on Vercel Edge/Serverless.
-- **Backend**: Containerized FastAPI + Background Worker unified runner on Railway (`python run.py --no-reload`).
-- **Database & Storage**: Supabase PostgreSQL with `pgvector` and private bucket `screenshots`.
-- **AI Runtime**: Google Gemini API (`gemini-2.5-flash` or `gemini-3.1-flash-lite`).
+### Steps to Deploy on Vercel:
+1. Go to [vercel.com](https://vercel.com/) $\rightarrow$ **Add New...** $\rightarrow$ **Project**.
+2. Select your `MediaMind` GitHub repository.
+3. Configure settings:
+   - **Framework Preset**: Next.js
+   - **Root Directory**: `FE`
+   - **Build Command**: `pnpm build`
+   - **Install Command**: `pnpm install`
+4. Set Environment Variables in the Vercel Dashboard:
+
+| Variable | Description | Value |
+| :--- | :--- | :--- |
+| `NEXT_PUBLIC_APP_NAME` | Application Name | `MediaMind` |
+| `NEXT_PUBLIC_API_URL` | Self-hosted API URL | `""` *(Leave empty so it calls local serverless routes)* |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase Project URL | `https://xxxx.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Anon Key | `eyJh...` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Service Role Key | Service role secret from Supabase |
+| `SUPABASE_STORAGE_BUCKET` | Storage Bucket Name | `screenshots` |
+| `GEMINI_API_KEY` | Google Gemini API Key | From Google AI Studio |
+| `GEMINI_RUNTIME_MODEL` | Runtime Model ID | `gemini-2.5-flash` |
+| `TMDB_API_KEY` | TMDB API Key (Optional) | Movie/TV metadata lookup |
+| `YOUTUBE_API_KEY` | YouTube Data API Key (Optional) | YouTube video metadata lookup |
+
+5. Click **Deploy**.
 
 ---
 
-## 2. Backend Deployment: Railway
+## 2. Option B: Split Frontend (Vercel) + Backend (Railway)
 
 ### Step 2.1: Create Project on Railway
 1. Go to [railway.app](https://railway.app/) and sign in with GitHub.
@@ -94,8 +116,10 @@ Before going live:
    cd BE
    python scripts/apply_migrations.py
    ```
+   All migrations 001–009 are applied on the live project as of 2026-11-19.
 2. In Supabase Dashboard → **Storage**:
-   - Create a bucket named `screenshots` set to **Private**.
+   - Create a bucket named `screenshots` set to **Private** (migration 009 also creates it when the `storage` schema is present).
+   - Set `SUPABASE_SERVICE_ROLE_KEY` in the hosting environment. The app uses it for bucket provisioning and private uploads/downloads; without it, originals fall back to inline storage.
 3. In Supabase Dashboard → **Authentication** → **URL Configuration**:
    - Add your Vercel URL (e.g., `https://mediamind.vercel.app/**`) to **Redirect URLs**.
 

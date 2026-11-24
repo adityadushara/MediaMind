@@ -8,8 +8,8 @@ import { ProcessingStatusBanner } from "@/components/dashboard/ProcessingStatusB
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { QuickUploadModal } from "@/components/dashboard/QuickUploadModal";
 import { AskLibraryModal } from "@/components/dashboard/AskLibraryModal";
-import { checkBackendHealth, getLibraryItems, getProcessingJobs } from "@/lib/api";
-import { HealthStatus, LibraryItem, ProcessingJob } from "@/types";
+import { checkBackendHealth, getLibraryItems, getLibraryStats, getProcessingJobs } from "@/lib/api";
+import { HealthStatus, LibraryItem, LibraryStats, ProcessingJob } from "@/types";
 import { RefreshCw, Loader2, UploadCloud } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { LandingPage } from "@/components/landing/LandingPage";
@@ -18,6 +18,7 @@ export default function DashboardPage() {
   const { user, isLoading: isAuthLoading, openAuthModal } = useAuth();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
+  const [stats, setStats] = useState<LibraryStats | null>(null);
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -28,14 +29,16 @@ export default function DashboardPage() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [healthRes, itemsRes, jobsRes] = await Promise.all([
+      const [healthRes, itemsRes, jobsRes, statsRes] = await Promise.all([
         checkBackendHealth(),
         getLibraryItems({ limit: 10 }),
         getProcessingJobs(),
+        getLibraryStats().catch(() => null),
       ]);
       setHealth(healthRes);
-      setLibraryItems(itemsRes.items);
-      setJobs(jobsRes);
+      setLibraryItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []);
+      setJobs(Array.isArray(jobsRes) ? jobsRes : []);
+      setStats(statsRes);
     } catch {
       // Keep previous state
     } finally {
@@ -44,8 +47,14 @@ export default function DashboardPage() {
   }, [user]);
 
   useEffect(() => {
+    if (isAuthLoading) return;
     if (!user) {
-      setIsLoading(false);
+      queueMicrotask(() => {
+        setLibraryItems([]);
+        setJobs([]);
+        setStats(null);
+        setIsLoading(false);
+      });
       return;
     }
 
@@ -53,15 +62,17 @@ export default function DashboardPage() {
 
     async function initialFetch() {
       try {
-        const [healthRes, itemsRes, jobsRes] = await Promise.all([
+        const [healthRes, itemsRes, jobsRes, statsRes] = await Promise.all([
           checkBackendHealth(),
           getLibraryItems({ limit: 10 }),
           getProcessingJobs(),
+          getLibraryStats().catch(() => null),
         ]);
         if (isSubscribed) {
           setHealth(healthRes);
-          setLibraryItems(itemsRes.items);
-          setJobs(jobsRes);
+          setLibraryItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []);
+          setJobs(Array.isArray(jobsRes) ? jobsRes : []);
+          setStats(statsRes);
           setIsLoading(false);
         }
       } catch {
@@ -76,7 +87,34 @@ export default function DashboardPage() {
     return () => {
       isSubscribed = false;
     };
-  }, [user]);
+  }, [user, isAuthLoading]);
+
+  // While a job is queued/processing, refresh so the banner and library
+  // reflect completion without a manual reload.
+  useEffect(() => {
+    if (!user) return;
+    const hasActive = jobs.some(
+      (job) => job.status === "queued" || job.status === "processing"
+    );
+    if (!hasActive) return;
+
+    const timer = setInterval(async () => {
+      try {
+        const [itemsRes, jobsRes, statsRes] = await Promise.all([
+          getLibraryItems({ limit: 10 }),
+          getProcessingJobs(),
+          getLibraryStats().catch(() => null),
+        ]);
+        setLibraryItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []);
+        setJobs(Array.isArray(jobsRes) ? jobsRes : []);
+        setStats(statsRes);
+      } catch {
+        // Keep the previous state; the next tick retries.
+      }
+    }, 8000);
+
+    return () => clearInterval(timer);
+  }, [user, jobs]);
 
   // If session is initializing, show clean spinner
   if (isAuthLoading) {
@@ -98,12 +136,33 @@ export default function DashboardPage() {
     );
   }
 
-  // Derived metrics
-  const totalItems = libraryItems.length;
-  const wantToConsume = libraryItems.filter((i) => i.consumption_status === "want_to_consume").length;
-  const consuming = libraryItems.filter((i) => i.consumption_status === "consuming").length;
-  const completed = libraryItems.filter((i) => i.consumption_status === "completed").length;
-  const pendingReviewCount = jobs.filter((j) => j.status === "needs_review").length;
+  // Derived metrics. Counts come from the server so they stay correct past the
+  // first page of library items; the loaded items are only a fallback.
+  const totalItems = stats?.total ?? libraryItems.length;
+  const wantToConsume = stats
+    ? stats.by_status.want_to_consume
+    : libraryItems.filter((i) => i.consumption_status === "want_to_consume").length;
+  const consuming = stats
+    ? stats.by_status.consuming
+    : libraryItems.filter((i) => i.consumption_status === "consuming").length;
+  const completed = stats
+    ? stats.by_status.completed
+    : libraryItems.filter((i) => i.consumption_status === "completed").length;
+  const pendingReviewCount = Math.max(
+    stats?.needs_review ?? 0,
+    jobs.filter((j) => j.status === "needs_review").length
+  );
+
+  // Dashboard search filters the recent list immediately, matching the fields
+  // the library search covers.
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const visibleItems = normalizedQuery
+    ? libraryItems.filter((item) =>
+        [item.title, item.creator, item.subcategory, item.genre]
+          .filter(Boolean)
+          .some((value) => value!.toLowerCase().includes(normalizedQuery))
+      )
+    : libraryItems;
 
   return (
     <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex">
@@ -119,7 +178,7 @@ export default function DashboardPage() {
           onSearchChange={setSearchQuery}
         />
 
-        <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6 min-w-0">
           {/* Welcome Banner */}
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-stone-200">
             <div>
@@ -167,7 +226,8 @@ export default function DashboardPage() {
 
           {/* Recent Activity & Content Grid */}
           <RecentActivity
-            items={libraryItems}
+            items={visibleItems}
+            searchTerm={normalizedQuery}
             onOpenUpload={() => setIsUploadOpen(true)}
           />
         </main>

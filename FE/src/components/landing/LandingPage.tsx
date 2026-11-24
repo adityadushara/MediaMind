@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import Link from "next/link";
 import {
   BookOpen,
@@ -29,8 +29,6 @@ interface LandingPageProps {
 }
 
 export function LandingPage({ onSignIn, onSignUp }: LandingPageProps) {
-  const [activeTab, setActiveTab] = useState<"book" | "youtube" | "movie">("book");
-
   return (
     <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex flex-col font-sans selection:bg-amber-100 selection:text-amber-900">
       {/* 1. Header / Navbar */}
@@ -126,171 +124,6 @@ export function LandingPage({ onSignIn, onSignUp }: LandingPageProps) {
                 <LogIn className="h-4 w-4 text-stone-500" />
                 <span>Sign In to MediaMind</span>
               </button>
-            </div>
-
-            {/* Trust Badges */}
-            <div className="flex items-center justify-center gap-6 pt-4 text-xs font-semibold text-stone-500 flex-wrap">
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                Original screenshots preserved
-              </span>
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                Zero duplicate clutter
-              </span>
-              <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                Private Supabase authentication
-              </span>
-            </div>
-          </div>
-
-          {/* Interactive Live Workflow Preview Card */}
-          <div className="mt-14 max-w-4xl mx-auto bg-white rounded-3xl border border-stone-200 shadow-xl overflow-hidden">
-            {/* Visual Header Tabs */}
-            <div className="bg-stone-50 border-b border-stone-200 px-6 py-3 flex items-center justify-between flex-wrap gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-stone-500 uppercase tracking-wider">
-                  See how it transforms:
-                </span>
-                <div className="flex items-center bg-white border border-stone-200 rounded-lg p-0.5">
-                  <button
-                    onClick={() => setActiveTab("book")}
-                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                      activeTab === "book" ? "bg-amber-500 text-white shadow-xs" : "text-stone-600 hover:text-stone-900"
-                    }`}
-                  >
-                    Book Screenshot
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("youtube")}
-                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                      activeTab === "youtube" ? "bg-amber-500 text-white shadow-xs" : "text-stone-600 hover:text-stone-900"
-                    }`}
-                  >
-                    YouTube Video
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("movie")}
-                    className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                      activeTab === "movie" ? "bg-amber-500 text-white shadow-xs" : "text-stone-600 hover:text-stone-900"
-                    }`}
-                  >
-                    Movie Recommendation
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
-                <Zap className="h-3.5 w-3.5" />
-                <span>AI Identified in 1.4s</span>
-              </div>
-            </div>
-
-            {/* Simulated Conversion Showcase */}
-            <div className="p-6 md:p-8 grid grid-cols-1 md:grid-cols-2 gap-8 items-center bg-gradient-to-b from-white to-stone-50/50">
-              {/* Left Side: Uploaded Screenshot Evidence */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold text-stone-500">
-                  <span className="flex items-center gap-1.5">
-                    <Camera className="h-4 w-4 text-amber-600" />
-                    Uploaded Screenshot Evidence
-                  </span>
-                  <span className="font-mono text-[11px] bg-stone-100 px-2 py-0.5 rounded text-stone-600">
-                    {activeTab === "book" ? "photo_book_shelf.jpg" : activeTab === "youtube" ? "youtube_feed.png" : "chat_recommendation.jpg"}
-                  </span>
-                </div>
-
-                <div className="h-56 rounded-2xl bg-stone-900/5 border border-stone-200/90 relative overflow-hidden flex items-center justify-center p-4">
-                  <div className="w-full h-full rounded-xl bg-stone-800 text-stone-100 flex flex-col justify-between p-4 shadow-inner relative overflow-hidden">
-                    <div className="space-y-1">
-                      <span className="text-[10px] uppercase font-mono tracking-widest text-amber-400 font-bold">
-                        Source Visual Capture
-                      </span>
-                      <h4 className="text-lg font-bold text-white">
-                        {activeTab === "book"
-                          ? "Rich Dad Poor Dad — Robert Kiyosaki"
-                          : activeTab === "youtube"
-                          ? "GUESS THE RANK — Pro Gameplay Breakdown"
-                          : "Interstellar — Christopher Nolan (Sci-Fi)"}
-                      </h4>
-                    </div>
-
-                    <div className="absolute right-4 bottom-4 border-2 border-dashed border-amber-400 bg-amber-400/10 rounded-lg p-2 text-center">
-                      <span className="text-[10px] font-mono font-bold text-amber-300 block">
-                        CV Crop Detected
-                      </span>
-                      <span className="text-[9px] text-amber-200">
-                        Confidence 98%
-                      </span>
-                    </div>
-
-                    <p className="text-xs text-stone-300 line-clamp-2">
-                      Original pixels preserved securely in private encrypted storage.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Side: Clean Structured Library Item */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs font-bold text-stone-500">
-                  <span className="flex items-center gap-1.5">
-                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                    Verified Library Card & Direct Link
-                  </span>
-                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    Ready to Consume
-                  </span>
-                </div>
-
-                <div className="p-5 rounded-2xl bg-white border border-stone-200 shadow-sm space-y-4">
-                  <div className="flex items-start gap-4">
-                    <div className="w-16 h-22 rounded-xl bg-amber-100 border border-amber-200 text-amber-800 flex items-center justify-center shrink-0 shadow-2xs font-black text-xl">
-                      {activeTab === "book" ? "📖" : activeTab === "youtube" ? "▶️" : "🎬"}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-stone-100 text-stone-700">
-                          {activeTab === "book" ? "Book" : activeTab === "youtube" ? "YouTube Video" : "Movie"}
-                        </span>
-                        <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          98% match
-                        </span>
-                      </div>
-                      <h4 className="font-extrabold text-base text-stone-900 mt-1 line-clamp-1">
-                        {activeTab === "book"
-                          ? "Rich Dad Poor Dad"
-                          : activeTab === "youtube"
-                          ? "GUESS THE RANK"
-                          : "Interstellar"}
-                      </h4>
-                      <p className="text-xs text-stone-600 font-medium">
-                        by{" "}
-                        <span className="text-stone-900 font-bold">
-                          {activeTab === "book"
-                            ? "Robert T. Kiyosaki"
-                            : activeTab === "youtube"
-                            ? "Popular Creator"
-                            : "Christopher Nolan"}
-                        </span>
-                      </p>
-                    </div>
-                  </div>
-
-                  <a
-                    href="#how-it-works"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onSignUp();
-                    }}
-                    className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition-all shadow-xs"
-                  >
-                    <span>Open Direct Canonical Link</span>
-                    <ExternalLink className="h-3.5 w-3.5" />
-                  </a>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -493,11 +326,11 @@ export function LandingPage({ onSignIn, onSignUp }: LandingPageProps) {
               },
               {
                 q: "What screenshot formats are supported?",
-                a: "MediaMind accepts PNG, JPEG, WebP, and AVIF screenshot formats. You can upload single files or batch drop multiple screenshots at once.",
+                a: "MediaMind accepts PNG, JPEG, WebP, AVIF, HEIC, GIF, and BMP screenshot formats. You can upload single files or batch drop multiple screenshots at once.",
               },
               {
                 q: "What happens if the AI is uncertain about a screenshot?",
-                a: "Instead of guessing wrong, MediaMind places uncertain items into the Human Review Queue where you can approve, reject, or adjust metadata with one click.",
+                a: "Instead of guessing wrong, MediaMind flags uncertain items as Needs Review inside My Library where you can confirm, edit, or inspect the original screenshot with one click.",
               },
               {
                 q: "Can I inspect the original screenshot later?",

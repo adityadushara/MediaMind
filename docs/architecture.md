@@ -128,7 +128,7 @@ The codebase is organized into independent logical layers within a single reposi
 8. **Telemetry Recording**: Inserts `processing_runs` record capturing prompt version, model name, prompt tokens, candidate tokens, total cost estimate, and latency.
 9. **Derivative Crop Generation**: For each detected item with a valid bounding box, `CVService` generates a non-destructive crop from the oriented original, stores it under `screenshots/{user_id}/derivatives/{id}.jpg`, and registers `image_derivatives`.
 10. **Candidate Persistence**: Inserts `identification_candidates` in `needs_review` review state with links to derivative crops and source screenshots.
-11. **Human Review Queue**: User inspects candidates at `/review` with side-by-side crop/original previews, edits metadata as needed, and clicks "Approve & Add to Library" or "Reject".
+11. **Human Verification**: The `/review` route opens the library filtered to `verification_status=needs_review`; the user compares the identified item with the preserved original screenshot in the evidence drawer and clicks "Confirm as verified". Human verification is stored separately from AI confidence.
 12. **Library Linkage & Resolution**: Approving creates verified `LibraryItem`, creates an immutable `ItemSource` link connecting the original screenshot, marks the candidate `accepted`, and resolves the parent job to `identified`.
 
 ---
@@ -164,6 +164,11 @@ Local media serving (`/api/v1/assets/media/{file_path:path}`) employs five seque
 3. **Storage Boundary Containment**: Enforces `target_path.is_relative_to(user_storage_root)`. Any escape outside `screenshots/{user_id}` is rejected with `403 Forbidden`.
 4. **Symlink Dereference Guard**: Resolves the strict canonical target on disk; if a symlink attempts to point outside `user_storage_root`, it is rejected with `403 Forbidden`.
 5. **Database Ownership Verification**: Even within the user's directory, an arbitrary unindexed file cannot be served. The path must match a registered `SourceAsset` or `ImageDerivative` owned by the requesting `user_id`.
+
+### 5.3.1. Storage Path Convention (Next.js route handlers)
+`source_assets.file_path` and `image_derivatives.storage_path` store **bucket-relative object keys** (`<user_id>/<uuid>.png`, `derivatives/<uuid>.jpg`). The bucket name comes from `SUPABASE_STORAGE_BUCKET` (`screenshots` by default) and must not appear inside the key. Rows written by an older upload handler embedded the bucket name (`screenshots/<user_id>/<uuid>.png`), so the media proxy and the worker pass paths through `normalizeStoragePath()` (`FE/src/lib/server/storage.ts`) before signing or downloading; new uploads write bucket-relative keys only.
+
+On the Python side, `source_assets.file_path` keeps the application-level `screenshots/<user_id>/...` root because the local adapter is rooted at `storage_data/` and the media route's ownership guard keys off that prefix. `SupabaseStorageAdapter._object_key()` strips the leading `<bucket>/` segment at the HTTP boundary for upload, download, signing and delete, so both backends address the same object and legacy rows keep resolving.
 
 ### 5.4. Worker Concurrency & Lease Token Architecture
 To prevent split-brain worker executions in clustered environments:

@@ -4,6 +4,7 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { LandingPage } from "@/components/landing/LandingPage";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import * as authContext from "@/context/AuthContext";
+import type { AuthContextType } from "@/context/AuthContext";
 
 describe("LandingPage Component", () => {
   it("renders product value proposition and interactive steps", () => {
@@ -52,8 +53,8 @@ describe("AuthGuard Component", () => {
 
   it("renders protected content when user is authenticated", () => {
     vi.spyOn(authContext, "useAuth").mockReturnValue({
-      user: { id: "user-123", email: "user@example.com" } as any,
-      session: { access_token: "mock-token" } as any,
+      user: { id: "user-123", email: "user@example.com" } as AuthContextType["user"],
+      session: { access_token: "mock-token" } as AuthContextType["session"],
       isLoading: false,
       isConfigured: true,
       isAuthModalOpen: false,

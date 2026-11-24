@@ -95,7 +95,25 @@ def stream_output(proc: subprocess.Popen, prefix: str):
         pass
 
 
+def configure_stdout() -> None:
+    """Print the banner even when stdout is a pipe on a legacy Windows codepage.
+
+    Redirecting the runner's output (a service manager, `> run.log`, CI) made
+    the emoji banner raise UnicodeEncodeError under cp1252 and killed the whole
+    process before either service started.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
+
 def main():
+    configure_stdout()
     parser = argparse.ArgumentParser(
         description="MediaMind Backend Runner",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

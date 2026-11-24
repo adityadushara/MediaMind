@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { QuickUploadModal } from "@/components/dashboard/QuickUploadModal";
@@ -22,9 +23,16 @@ import {
 } from "lucide-react";
 
 export default function AboutPage() {
+  const router = useRouter();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isAskAIOpen, setIsAskAIOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const openLibrarySearch = () => {
+    const term = searchQuery.trim();
+    router.push(term ? `/library?search=${encodeURIComponent(term)}` : "/library");
+  };
 
   useEffect(() => {
     checkBackendHealth().then(setHealth).catch(() => {});
@@ -38,9 +46,12 @@ export default function AboutPage() {
         <Header
           onOpenUpload={() => setIsUploadOpen(true)}
           onOpenAskAI={() => setIsAskAIOpen(true)}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+          onSearchSubmit={openLibrarySearch}
         />
 
-        <main className="flex-1 p-6 md:p-10 max-w-5xl w-full mx-auto space-y-10">
+        <main className="flex-1 p-4 sm:p-6 md:p-10 max-w-5xl w-full mx-auto space-y-10 min-w-0">
           {/* Hero Section */}
           <div className="space-y-4 text-center max-w-2xl mx-auto pt-4">
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-amber-100 text-amber-800 border border-amber-300 text-xs font-bold shadow-2xs">
@@ -84,7 +95,7 @@ export default function AboutPage() {
               </div>
               <h3 className="font-extrabold text-stone-900 text-base">Ask Your Library (RAG)</h3>
               <p className="text-xs text-stone-600 leading-relaxed">
-                Natural language semantic search powered by vector similarity. Ask questions like <em>&quot;What was that podcast about habit building?&quot;</em> and get instant, grounded results.
+                Natural language semantic search powered by vector similarity. Ask questions like <em>&quot;What was that podcast about habit building?&quot;</em> and get answers grounded in your saved items, linked back to their sources.
               </p>
             </div>
           </div>
@@ -114,7 +125,7 @@ export default function AboutPage() {
               </div>
               <div className="flex items-start gap-2.5">
                 <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span><strong>Sub-5-Second SLA</strong>: Optimized async pipeline delivers AI extraction and semantic search under 5 seconds.</span>
+                <span><strong>Tracked Latency</strong>: Extraction and retrieval timings are recorded per job and query. Response time depends on the model and provider load rather than a fixed SLA.</span>
               </div>
               <div className="flex items-start gap-2.5">
                 <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -122,7 +133,7 @@ export default function AboutPage() {
               </div>
               <div className="flex items-start gap-2.5">
                 <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span><strong>Zero-Distraction UX</strong>: Responsive mouse wheel horizontal category navigation and touch swiping with zero visible scrollbars.</span>
+                <span><strong>Zero-Distraction UX</strong>: Horizontal category navigation with mouse wheel, touch swiping and arrow controls, so no content type is hidden.</span>
               </div>
             </div>
           </div>
@@ -131,7 +142,7 @@ export default function AboutPage() {
           <div className="text-center space-y-3 pb-6">
             <span className="text-xs font-bold uppercase tracking-wider text-stone-400">Powered By</span>
             <div className="flex flex-wrap items-center justify-center gap-2">
-              {["Next.js 15", "TypeScript", "Tailwind CSS", "FastAPI", "Python 3.12", "Google Gemini", "OpenCV", "Pillow", "Supabase Postgres", "pgvector"].map((tech) => (
+              {["Next.js 16", "TypeScript", "Tailwind CSS", "FastAPI", "Python 3.12", "Google Gemini", "OpenCV", "Pillow", "Supabase Postgres", "pgvector"].map((tech) => (
                 <span
                   key={tech}
                   className="px-3 py-1 rounded-xl bg-stone-100 text-stone-700 text-xs font-semibold border border-stone-200"
@@ -147,7 +158,7 @@ export default function AboutPage() {
       <QuickUploadModal
         isOpen={isUploadOpen}
         onClose={() => setIsUploadOpen(false)}
-        onUploadSuccess={() => {}}
+        onUploadSuccess={() => router.push("/library")}
       />
 
       <AskLibraryModal

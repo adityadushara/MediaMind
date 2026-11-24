@@ -15,10 +15,12 @@ describe("Review Page (Legacy Redirect)", () => {
     vi.clearAllMocks();
   });
 
-  it("redirects users directly to /library since review queue has been removed", () => {
+  it("opens the library filtered to items needing review", () => {
     render(<ReviewPage />);
 
-    expect(screen.getByText("Redirecting to Your Library...")).toBeDefined();
-    expect(mockReplace).toHaveBeenCalledWith("/library");
+    expect(screen.getByText(/Opening items that need review/)).toBeDefined();
+    expect(mockReplace).toHaveBeenCalledWith(
+      "/library?verification_status=needs_review"
+    );
   });
 });

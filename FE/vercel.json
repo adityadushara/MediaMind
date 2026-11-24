@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "name": "mediamind",
   "framework": "nextjs",
   "buildCommand": "pnpm build",
   "installCommand": "pnpm install"

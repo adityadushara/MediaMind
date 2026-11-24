@@ -15,6 +15,7 @@ import { CustomSelect, SelectOption } from "@/components/ui/CustomSelect";
 import { ImageViewerModal } from "@/components/ui/ImageViewerModal";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { AuthGuard } from "@/components/auth/AuthGuard";
+import { useAuth } from "@/context/AuthContext";
 import {
   HealthStatus,
   SourceAsset,
@@ -23,7 +24,6 @@ import {
 } from "@/types";
 import {
   Image as ImageIcon,
-  Search,
   RefreshCw,
   Clock,
   CheckCircle2,
@@ -41,6 +41,8 @@ import {
 
 const SOURCES_STATUS_OPTIONS: SelectOption[] = [
   { value: "all", label: "All Statuses" },
+  { value: "queued", label: "Queued" },
+  { value: "processing", label: "Processing" },
   { value: "awaiting_identification", label: "Ready for AI" },
   { value: "identified", label: "Identified" },
   { value: "needs_review", label: "Needs Review" },
@@ -53,6 +55,7 @@ const SOURCES_SORT_OPTIONS: SelectOption[] = [
 ];
 
 export default function SourcesPage() {
+  const { user, isLoading: isAuthLoading } = useAuth();
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [assets, setAssets] = useState<SourceAsset[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -99,24 +102,29 @@ export default function SourcesPage() {
     }
   };
 
-  const loadSources = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const res = await getSourceAssets({
-        search: searchQuery.trim() || undefined,
-        status: statusFilter === "all" ? undefined : statusFilter,
-        sort: sortOrder,
-        limit,
-        offset: page * limit,
-      });
-      setAssets(res.items);
-      setTotalCount(res.total);
-    } catch {
-      // keep existing
-    } finally {
-      setIsLoading(false);
-    }
-  }, [searchQuery, statusFilter, sortOrder, page]);
+  const loadSources = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!user) return;
+      if (!options?.silent) setIsLoading(true);
+      try {
+        const res = await getSourceAssets({
+          search: searchQuery.trim() || undefined,
+          status: statusFilter === "all" ? undefined : statusFilter,
+          sort: sortOrder,
+          limit,
+          offset: page * limit,
+        });
+        const rawItems = res?.items || [];
+        setAssets(Array.isArray(rawItems) ? rawItems : []);
+        setTotalCount(res?.total || 0);
+      } catch {
+        // keep existing
+      } finally {
+        if (!options?.silent) setIsLoading(false);
+      }
+    },
+    [user, searchQuery, statusFilter, sortOrder, page]
+  );
 
   useEffect(() => {
     let isSubscribed = true;
@@ -128,36 +136,43 @@ export default function SourcesPage() {
     };
   }, []);
 
+  // A single fetch path: the previous duplicate effect fired two overlapping
+  // requests for every filter change.
   useEffect(() => {
-    let isSubscribed = true;
+    if (isAuthLoading) return;
+    if (!user) {
+      queueMicrotask(() => {
+        setAssets([]);
+        setTotalCount(0);
+        setSelectedAsset(null);
+        setIsLoading(false);
+      });
+      return;
+    }
+    loadSources();
+  }, [loadSources, user, isAuthLoading]);
 
-    async function fetchSources() {
-      try {
-        const res = await getSourceAssets({
-          search: searchQuery.trim() || undefined,
-          status: statusFilter === "all" ? undefined : statusFilter,
-          sort: sortOrder,
-          limit,
-          offset: page * limit,
-        });
-        if (isSubscribed) {
-          setAssets(res.items);
-          setTotalCount(res.total);
-          setIsLoading(false);
-        }
-      } catch {
-        if (isSubscribed) {
-          setIsLoading(false);
+  const hasActiveJobs =
+    assets.some((a) => a.latest_status === "queued" || a.latest_status === "processing") ||
+    selectedAsset?.latest_job?.status === "queued" ||
+    selectedAsset?.latest_job?.status === "processing";
+
+  useEffect(() => {
+    if (isAuthLoading || !user || !hasActiveJobs) return;
+    const selectedId = selectedAsset?.id;
+    const timer = setInterval(async () => {
+      await loadSources({ silent: true });
+      if (selectedId) {
+        try {
+          const detail = await getSourceAssetDetail(selectedId);
+          setSelectedAsset(detail);
+        } catch {
+          // keep existing
         }
       }
-    }
-
-    fetchSources();
-
-    return () => {
-      isSubscribed = false;
-    };
-  }, [searchQuery, statusFilter, sortOrder, page]);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [hasActiveJobs, loadSources, selectedAsset?.id, user, isAuthLoading]);
 
   const handleOpenDetail = async (assetId: string) => {
     try {
@@ -191,35 +206,43 @@ export default function SourcesPage() {
       case "identified":
       case "completed":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-300">
             <CheckCircle2 className="h-3 w-3" />
             <span>{status === "completed" ? "Completed" : "Identified"}</span>
           </span>
         );
       case "needs_review":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-300">
             <AlertCircle className="h-3 w-3" />
             <span>Needs Review</span>
           </span>
         );
       case "awaiting_identification":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-300">
             <Clock className="h-3 w-3" />
             <span>Ready for AI</span>
           </span>
         );
       case "failed":
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-50 text-rose-700 border border-rose-300">
             <AlertCircle className="h-3 w-3" />
             <span>Failed</span>
           </span>
         );
+      case "queued":
+      case "processing":
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-300">
+            <Clock className="h-3 w-3" />
+            <span>{status === "processing" ? "Processing" : "Queued"}</span>
+          </span>
+        );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-neutral-800 text-neutral-400 border border-neutral-700">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-stone-100 text-stone-600 border border-stone-300">
             <span>{status || "Stored"}</span>
           </span>
         );
@@ -234,9 +257,15 @@ export default function SourcesPage() {
       <Sidebar health={health} />
 
       <div className="flex-1 flex flex-col min-w-0">
-        <Header />
+        <Header
+          searchQuery={searchQuery}
+          onSearchChange={(q) => {
+            setSearchQuery(q);
+            setPage(0);
+          }}
+        />
 
-        <main className="flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6">
+        <main className="flex-1 p-4 sm:p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6 min-w-0">
           {/* Toast Notification */}
           {toast && (
             <div
@@ -278,7 +307,7 @@ export default function SourcesPage() {
 
             <div className="flex items-center gap-2">
               <button
-                onClick={loadSources}
+                onClick={() => loadSources()}
                 disabled={isLoading}
                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl border border-stone-300 bg-white hover:bg-stone-50 text-xs font-bold text-stone-800 transition-colors shadow-sm"
               >
@@ -290,19 +319,11 @@ export default function SourcesPage() {
 
           {/* Filters & Search Toolbar */}
           <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setPage(0);
-                }}
-                placeholder="Search by file name..."
-                className="w-full bg-white border border-stone-200 rounded-xl pl-9 pr-3 py-2 text-xs text-stone-800 placeholder-stone-400 focus:outline-none focus:border-amber-600 shadow-sm"
-              />
-            </div>
+            <p className="text-xs text-stone-500 font-medium w-full sm:w-auto">
+              {searchQuery.trim()
+                ? `Filtering by file name: “${searchQuery.trim()}”`
+                : "Search by file name from the bar at the top."}
+            </p>
 
             <div className="flex items-center gap-3 w-full sm:w-auto flex-wrap">
               <div className="flex items-center gap-2">
@@ -332,12 +353,12 @@ export default function SourcesPage() {
 
           {/* Sources Grid */}
           {isLoading ? (
-            <div className="py-20 text-center text-xs text-neutral-500">Loading source screenshots...</div>
-          ) : assets.length === 0 ? (
-            <div className="py-16 text-center border border-dashed border-neutral-800 rounded-xl space-y-2">
-              <ImageIcon className="h-8 w-8 text-neutral-600 mx-auto" />
-              <p className="text-xs font-semibold text-neutral-300">No screenshots found</p>
-              <p className="text-[11px] text-neutral-500">
+            <div className="py-20 text-center text-xs text-stone-500">Loading source screenshots...</div>
+          ) : !assets || assets.length === 0 ? (
+            <div className="py-16 text-center border border-dashed border-stone-300 rounded-xl space-y-2 bg-white">
+              <ImageIcon className="h-8 w-8 text-stone-400 mx-auto" />
+              <p className="text-xs font-semibold text-stone-800">No screenshots found</p>
+              <p className="text-[11px] text-stone-500">
                 Upload screenshots to inspect them here and attach them to media items.
               </p>
             </div>
@@ -487,7 +508,7 @@ export default function SourcesPage() {
               </div>
 
               {/* Metadata specs */}
-              <div className="grid grid-cols-2 gap-3 p-4 rounded-2xl bg-stone-50 border border-stone-200 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-2xl bg-stone-50 border border-stone-200 text-xs">
                 <div>
                   <span className="text-stone-500 block text-[10px] uppercase font-mono font-semibold">Dimensions</span>
                   <span className="font-mono text-stone-800 font-semibold">
@@ -522,15 +543,15 @@ export default function SourcesPage() {
 
               {/* Latest Job & Retry Actions */}
               {selectedAsset.latest_job && (
-                <div className="p-3.5 rounded-xl bg-neutral-950 border border-neutral-800 space-y-2">
+                <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-200 space-y-2">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-neutral-200">Ingestion Job</span>
-                    <span className="font-mono text-neutral-500 text-[10px]">
+                    <span className="font-semibold text-stone-800">Ingestion Job</span>
+                    <span className="font-mono text-stone-500 text-[10px]">
                       Attempts: {selectedAsset.latest_job.retry_count} / {selectedAsset.latest_job.max_retries}
                     </span>
                   </div>
                   {selectedAsset.latest_job.error_message && (
-                    <p className="text-xs text-rose-400 font-mono">
+                    <p className="text-xs text-rose-600 font-mono">
                       Error: {selectedAsset.latest_job.error_message}
                     </p>
                   )}
@@ -539,7 +560,7 @@ export default function SourcesPage() {
                       <button
                         disabled={retryingJobId === selectedAsset.latest_job.id}
                         onClick={() => handleRetryJob(selectedAsset.latest_job!.id)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 transition-colors"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-stone-300 hover:bg-stone-100 text-xs font-bold text-stone-800 transition-colors cursor-pointer disabled:opacity-50"
                       >
                         <RotateCcw className={`h-3 w-3 ${retryingJobId === selectedAsset.latest_job.id ? "animate-spin" : ""}`} />
                         <span>Re-enqueue Job</span>
@@ -551,17 +572,17 @@ export default function SourcesPage() {
 
               {/* Associated Media Library Items */}
               <div className="space-y-2">
-                <h4 className="text-xs font-semibold uppercase font-mono text-neutral-400 flex items-center gap-1.5">
-                  <BookOpen className="h-3.5 w-3.5 text-indigo-400" />
-                  <span>Associated Media Items ({selectedAsset.library_items.length})</span>
+                <h4 className="text-xs font-semibold uppercase font-mono text-stone-500 flex items-center gap-1.5">
+                  <BookOpen className="h-3.5 w-3.5 text-indigo-600" />
+                  <span>Associated Media Items ({(selectedAsset.library_items || []).length})</span>
                 </h4>
-                {selectedAsset.library_items.length === 0 ? (
-                  <p className="text-xs text-neutral-500 italic p-3 bg-neutral-950/40 rounded-lg border border-neutral-800">
+                {(selectedAsset.library_items || []).length === 0 ? (
+                  <p className="text-xs text-stone-500 italic p-3 bg-stone-50 rounded-lg border border-stone-200">
                     Not linked to any media library item yet. You can attach this screenshot from the Library page.
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    {selectedAsset.library_items.map((it) => (
+                    {(selectedAsset.library_items || []).map((it) => (
                       <div
                         key={it.id}
                         className="flex items-center justify-between p-3 rounded-xl bg-stone-50 border border-stone-200 text-xs hover:border-amber-400 transition-colors"

@@ -19,9 +19,11 @@ import { LibraryItem, ContentType } from "@/types";
 interface RecentActivityProps {
   items: LibraryItem[];
   onOpenUpload: () => void;
+  /** Active header search term, if any. Changes the empty state copy. */
+  searchTerm?: string;
 }
 
-export function RecentActivity({ items, onOpenUpload }: RecentActivityProps) {
+export function RecentActivity({ items, onOpenUpload, searchTerm }: RecentActivityProps) {
   const getContentTypeBadge = (type: ContentType) => {
     switch (type) {
       case "book":
@@ -104,19 +106,31 @@ export function RecentActivity({ items, onOpenUpload }: RecentActivityProps) {
           <div className="p-3 rounded-full bg-amber-100 text-amber-700">
             <BookOpen className="h-6 w-6" />
           </div>
-          <div>
-            <p className="text-sm font-bold text-stone-900">Your library is currently empty</p>
-            <p className="text-xs font-medium text-stone-500 max-w-sm mt-0.5">
-              Upload a screenshot of any book cover, YouTube video, or movie poster to get started.
-            </p>
-          </div>
-          <button
-            onClick={onOpenUpload}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-sm"
-          >
-            <PlusCircle className="h-4 w-4" />
-            <span>Add First Screenshot</span>
-          </button>
+          {searchTerm ? (
+            <div>
+              <p className="text-sm font-bold text-stone-900">No matches on this page</p>
+              <p className="text-xs font-medium text-stone-500 max-w-sm mt-0.5">
+                Nothing recent matches &ldquo;{searchTerm}&rdquo;. Search the full library from
+                there, or clear the search field.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div>
+                <p className="text-sm font-bold text-stone-900">Your library is currently empty</p>
+                <p className="text-xs font-medium text-stone-500 max-w-sm mt-0.5">
+                  Upload a screenshot of any book cover, YouTube video, or movie poster to get started.
+                </p>
+              </div>
+              <button
+                onClick={onOpenUpload}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-sm"
+              >
+                <PlusCircle className="h-4 w-4" />
+                <span>Add First Screenshot</span>
+              </button>
+            </>
+          )}
         </div>
       ) : (
         <div className="divide-y divide-stone-100">

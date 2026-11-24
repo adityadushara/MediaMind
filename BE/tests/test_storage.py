@@ -1,5 +1,6 @@
 import pytest
 from app.adapters.storage.local import LocalStorageAdapter
+from app.adapters.storage.supabase import SupabaseStorageAdapter
 
 
 @pytest.mark.asyncio
@@ -27,6 +28,22 @@ async def test_local_storage_adapter(tmp_path):
     # Confirm deleted
     with pytest.raises(FileNotFoundError):
         await adapter.download_file(dest_path)
+
+
+def test_supabase_object_keys_are_bucket_relative():
+    """Application paths carry a `screenshots/` root that is the bucket itself.
+
+    Regression: keys were sent as `screenshots/{user}/file.png` to bucket
+    `screenshots`, resolving to `screenshots/screenshots/...` and failing every
+    download, signed URL and delete with 404.
+    """
+    adapter = SupabaseStorageAdapter()
+
+    assert adapter._object_key("screenshots/user-1/file.png") == "user-1/file.png"
+    assert adapter._object_key("/screenshots/user-1/file.png") == "user-1/file.png"
+    assert adapter._object_key("user-1/file.png") == "user-1/file.png"
+    # Only the configured bucket prefix is stripped.
+    assert adapter._object_key("screenshots-old/file.png") == "screenshots-old/file.png"
 
 
 @pytest.mark.asyncio

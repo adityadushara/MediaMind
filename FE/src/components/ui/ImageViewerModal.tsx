@@ -8,6 +8,7 @@ interface ImageViewerModalProps {
   isOpen: boolean;
   onClose: () => void;
   imageUrl?: string | null;
+  fallbackUrl?: string | null;
   altText?: string;
   title?: string;
 }
@@ -16,17 +17,22 @@ export function ImageViewerModal({
   isOpen,
   onClose,
   imageUrl,
+  fallbackUrl,
   altText = "Screenshot Preview",
   title = "Screenshot Inspection",
 }: ImageViewerModalProps) {
   const [zoom, setZoom] = useState(1);
   const [hasError, setHasError] = useState(false);
+  const [triedFallback, setTriedFallback] = useState(false);
   const [prevImageUrl, setPrevImageUrl] = useState(imageUrl);
+  const [prevFallbackUrl, setPrevFallbackUrl] = useState(fallbackUrl);
 
-  if (imageUrl !== prevImageUrl) {
+  if (imageUrl !== prevImageUrl || fallbackUrl !== prevFallbackUrl) {
     setPrevImageUrl(imageUrl);
+    setPrevFallbackUrl(fallbackUrl);
     setZoom(1);
     setHasError(false);
+    setTriedFallback(false);
   }
 
   useEffect(() => {
@@ -50,9 +56,18 @@ export function ImageViewerModal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen || !imageUrl) return null;
+  const activeUrl = triedFallback && fallbackUrl ? fallbackUrl : imageUrl;
+  if (!isOpen || !activeUrl) return null;
 
-  const resolvedSrc = resolveMediaUrl(imageUrl);
+  const resolvedSrc = resolveMediaUrl(activeUrl);
+
+  const handleImageError = () => {
+    if (!triedFallback && fallbackUrl && fallbackUrl !== imageUrl) {
+      setTriedFallback(true);
+    } else {
+      setHasError(true);
+    }
+  };
 
   const handleZoomIn = () => setZoom((z) => Math.min(z + 0.25, 3));
   const handleZoomOut = () => setZoom((z) => Math.max(z - 0.25, 0.5));
@@ -177,7 +192,7 @@ export function ImageViewerModal({
                 src={resolvedSrc}
                 alt={altText}
                 referrerPolicy="no-referrer"
-                onError={() => setHasError(true)}
+                onError={handleImageError}
                 className="max-h-[70vh] w-auto max-w-full object-contain rounded-xl shadow-md border border-stone-200/60 bg-white"
               />
             </div>

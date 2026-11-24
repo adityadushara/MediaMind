@@ -17,8 +17,28 @@ class SupabaseStorageAdapter(BaseStorageAdapter):
             "apikey": self.api_key,
         }
 
+    def _object_key(self, file_path: str) -> str:
+        """Return a bucket-relative object key for ``file_path``.
+
+        Application paths are stored as ``screenshots/{user_id}/{file}`` because
+        the local adapter roots its filesystem at ``storage_data/``. Supabase
+        object keys, however, are relative to the bucket itself, so a leading
+        ``{bucket}/`` segment would address ``{bucket}/{bucket}/{user_id}/...``
+        and every download or signed URL would 404. Strip it here so rows
+        written by either storage backend resolve correctly.
+        """
+        clean_path = file_path.lstrip("/\\").replace("\\", "/")
+        prefix = f"{self.bucket}/"
+        if clean_path.startswith(prefix):
+            clean_path = clean_path[len(prefix):]
+        return clean_path
+
     async def upload_file(self, file_path: str, data: bytes, mime_type: str) -> str:
-        clean_path = file_path.lstrip("/").replace("\\", "/")
+        # Keep the application-level path (with its `screenshots/` root) as the
+        # stored value so both storage backends agree on `source_assets.file_path`
+        # and the media route's ownership guard keeps working.
+        logical_path = file_path.lstrip("/\\").replace("\\", "/")
+        clean_path = self._object_key(logical_path)
         url = f"{self.base_url}/storage/v1/object/{self.bucket}/{clean_path}"
         headers = {**self.headers, "Content-Type": mime_type}
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -26,10 +46,10 @@ class SupabaseStorageAdapter(BaseStorageAdapter):
             if resp.status_code not in (200, 201):
                 logger.error(f"Supabase upload failed [{resp.status_code}]: {resp.text}")
                 raise RuntimeError(f"Storage upload failed: {resp.text}")
-        return clean_path
+        return logical_path
 
     async def download_file(self, file_path: str) -> bytes:
-        clean_path = file_path.lstrip("/").replace("\\", "/")
+        clean_path = self._object_key(file_path)
         url = f"{self.base_url}/storage/v1/object/authenticated/{self.bucket}/{clean_path}"
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.get(url, headers=self.headers)
@@ -39,7 +59,7 @@ class SupabaseStorageAdapter(BaseStorageAdapter):
             return resp.content
 
     async def get_signed_url(self, file_path: str, expires_in_seconds: int = 900) -> str:
-        clean_path = file_path.lstrip("/").replace("\\", "/")
+        clean_path = self._object_key(file_path)
         url = f"{self.base_url}/storage/v1/object/sign/{self.bucket}/{clean_path}"
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.post(url, json={"expiresIn": expires_in_seconds}, headers=self.headers)
@@ -51,7 +71,7 @@ class SupabaseStorageAdapter(BaseStorageAdapter):
             return f"{self.base_url}/storage/v1/object/public/{self.bucket}/{clean_path}"
 
     async def delete_file(self, file_path: str) -> bool:
-        clean_path = file_path.lstrip("/").replace("\\", "/")
+        clean_path = self._object_key(file_path)
         url = f"{self.base_url}/storage/v1/object/{self.bucket}/{clean_path}"
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.delete(url, headers=self.headers)

@@ -5,6 +5,11 @@
 - **Base URL**: `/api/v1`
 - **Authentication**: Bearer Token in `Authorization` header (`Bearer <Supabase_JWT>`)
 - **Data Exchange**: JSON (`application/json`) with `multipart/form-data` for uploads
+- **Media payloads**: list and detail responses never embed image bytes. Screenshots
+  are referenced through `signed_url` / `screenshot_url`
+  (`/api/v1/assets/media/{asset_id}?kind=original&token=...`); any inline
+  `data:` URL in `source_assets.file_path` is redacted to `null` before
+  serialization so a list response stays kilobytes instead of megabytes.
 - **Pagination**: `limit` (default 20, max 100), `offset` (default 0)
 - **Standard Error Envelope**:
 ```json
@@ -52,9 +57,10 @@
   - Form-data: `files` (one or more image files).
   - Headers: `Idempotency-Key` (optional string, deduplicates client retries).
   - Query parameters: `force_reupload` (boolean, default false. When false, identical files by SHA-256 return existing asset reference).
-  - Validates MIME type and file magic bytes (PNG, JPEG, WebP, max 15MB).
+  - Validates MIME type and file magic bytes (PNG, JPEG, WebP, AVIF, HEIC, GIF, BMP; max 15MB).
   - Computes SHA-256 hash. Saves original screenshot directly to private storage (`screenshots/{user_id}/{asset_id}.ext`).
   - Creates `source_assets` record and initializes `processing_jobs` (in M2, sets status to `awaiting_identification`).
+  - Creates a placeholder library item with `verification_status = "unverified"`; the worker later promotes it to `needs_review` or `auto_accepted`, and only the user can mark it `verified`.
   - Storage failure cleanup: If database creation fails after storage upload, storage is immediately cleaned up; if storage cleanup fails, an error is logged with orphan details for administrative recovery.
   - Response `202 Accepted`:
     ```json
@@ -126,6 +132,14 @@
 
 - `POST /api/v1/jobs/{job_id}/retry`
   - Re-enqueues a failed or unidentified job for re-processing.
+  - `GET /api/v1/jobs` also auto-retries a failed job whose `error_message`
+    matches a retryable pattern (retired model, provider outage, rate limit) as
+    long as `retry_count < max_retries`. Authentication/configuration failures
+    (invalid or missing `GEMINI_API_KEY`) are never auto-retried, because only a
+    human can clear them.
+  - Re-processing a screenshot never overwrites an item the user already
+    verified or entered by hand: the new AI result is stored in
+    `identification_candidates` and the library record is left untouched.
   - Enforces `retry_count < max_retries`. Returns `400 Bad Request` if max retries exceeded.
   - Response `200 OK`:
     ```json
@@ -149,7 +163,7 @@
 
 ### 2.5. Library Items & Associations
 - `GET /api/v1/library`
-  - Query params: `content_type` (`book`, `movie`, `tv_show`, `youtube_video`, `documentary`, `podcast`, `course`, `article`, `newsletter`, `other`), `subcategory` (filter by category/topic, e.g. `Psychology`, `Habits`), `consumption_status`, `search`, `sort_by` (`created_at`, `updated_at`, `title`, `user_rating`), `sort_order` (`asc`, `desc`), `limit`, `offset`.
+  - Query params: `content_type` (`book`, `movie`, `tv_show`, `youtube_video`, `documentary`, `podcast`, `course`, `article`, `newsletter`, `other`), `subcategory` (filter by category/topic, e.g. `Psychology`, `Habits`), `consumption_status`, `verification_status` (`unverified`, `needs_review`, `auto_accepted`, `verified`, `manual_entry`), `search` (matches title, creator, subcategory, genre and overview), `sort_by` (`created_at`, `updated_at`, `title`, `user_rating`, `release_year`; unknown columns fall back to `created_at`), `sort_order` (`asc`, `desc`), `limit`, `offset`.
   - Response `200 OK`:
     ```json
     {
@@ -170,6 +184,24 @@
           "updated_at": "2026-11-13T12:30:00Z"
         }
       ]
+    }
+    ```
+
+- `GET /api/v1/library/stats`
+  - Server-side aggregate counts for the dashboard, so metrics are not limited to the first page of items.
+  - Response `200 OK`:
+    ```json
+    {
+      "total": 42,
+      "by_status": {
+        "want_to_consume": 20,
+        "consuming": 5,
+        "completed": 14,
+        "on_hold": 2,
+        "dropped": 1
+      },
+      "needs_review": 3,
+      "unverified": 0
     }
     ```
 
@@ -222,7 +254,7 @@
 - `POST /api/v1/library/{item_id}/sources/{asset_id}`
   - Associates a source screenshot with a library item.
   - Enforces cross-user ownership verification: both item and asset must belong to the authenticated user.
-  - Idempotent: returns `200 OK` if association already exists.
+  - Returns `409 Conflict` with a readable message if the screenshot is already attached, and `404` if either record is gone.
 
 - `DELETE /api/v1/library/{item_id}/sources/{asset_id}`
   - Removes association between a library item and a source screenshot.

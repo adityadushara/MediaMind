@@ -222,7 +222,8 @@ def test_upload_directly_adds_to_library_and_has_screenshot_url(client):
     assert get_res.status_code == 200
     item = get_res.json()
     assert item["id"] == lib_id
-    assert item["verification_status"] == "verified"
+    # A fresh upload is unprocessed, so it must not claim human verification.
+    assert item["verification_status"] == "unverified"
     assert item["screenshot_url"] is not None
     assert "/api/v1/assets/media/" in item["screenshot_url"]
     assert len(item["sources"]) == 1
@@ -250,8 +251,8 @@ def test_library_verification_endpoints(client):
     id1 = res1.json()["assets"][0]["library_item_id"]
     id2 = res2.json()["assets"][0]["library_item_id"]
 
-    # Verify items are directly in the library as verified
-    list_items = client.get("/api/v1/library?verification_status=verified", headers=headers)
+    # Verify items are queued as unverified until identified or reviewed
+    list_items = client.get("/api/v1/library?verification_status=unverified", headers=headers)
     assert list_items.status_code == 200
     verified_ids = [it["id"] for it in list_items.json()["items"]]
     assert id1 in verified_ids
