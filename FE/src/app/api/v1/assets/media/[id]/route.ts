@@ -18,6 +18,24 @@ import {
  * Auth may arrive as a Bearer header or as a `token` query parameter, because
  * <img src> cannot send custom headers.
  */
+/**
+ * Signed URLs are valid for an hour; re-signing one on every <img> request
+ * added a Supabase round trip to each screenshot render. Cache them per
+ * serverless instance so repeat views skip that hop.
+ */
+const SIGNED_URL_TTL_MS = 10 * 60 * 1000;
+const signedUrlCache = new Map<string, { at: number; url: string }>();
+
+function readCachedSignedUrl(key: string): string | null {
+  const hit = signedUrlCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > SIGNED_URL_TTL_MS) {
+    signedUrlCache.delete(key);
+    return null;
+  }
+  return hit.url;
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -105,23 +123,30 @@ export async function GET(
   // Signing a private object requires a privileged client; ownership was
   // already enforced by the query above, so the service role cannot leak
   // another user's file here.
-  const { data: signed, error: signedError } = await getSupabaseAdmin().storage
-    .from(bucket)
-    .createSignedUrl(normalizeStoragePath(storagePath, bucket), 3600);
+  const cacheKey = `${bucket}:${kind}:${storagePath}`;
+  let signedUrl = readCachedSignedUrl(cacheKey);
 
-  if (signedError || !signed?.signedUrl) {
-    return NextResponse.json(
-      { detail: "Screenshot is temporarily unavailable" },
-      { status: 404 }
-    );
+  if (!signedUrl) {
+    const { data: signed, error: signedError } = await getSupabaseAdmin().storage
+      .from(bucket)
+      .createSignedUrl(normalizeStoragePath(storagePath, bucket), 3600);
+
+    if (signedError || !signed?.signedUrl) {
+      return NextResponse.json(
+        { detail: "Screenshot is temporarily unavailable" },
+        { status: 404 }
+      );
+    }
+    signedUrl = signed.signedUrl;
+    signedUrlCache.set(cacheKey, { at: Date.now(), url: signedUrl });
   }
 
   // Redirect to the short-lived signed URL so the binary transfer is served by
   // Supabase Storage rather than the serverless function.
-  return NextResponse.redirect(signed.signedUrl, {
+  return NextResponse.redirect(signedUrl, {
     status: 302,
     headers: {
-      "Cache-Control": "private, max-age=300",
+      "Cache-Control": "private, max-age=600",
     },
   });
 }

@@ -6,7 +6,6 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { QuickUploadModal } from "@/components/dashboard/QuickUploadModal";
 import { AskLibraryModal } from "@/components/dashboard/AskLibraryModal";
-import { checkBackendHealth } from "@/lib/api";
 import { HealthStatus } from "@/types";
 import {
   BookMarked,
@@ -24,7 +23,6 @@ import {
 
 export default function AboutPage() {
   const router = useRouter();
-  const [health, setHealth] = useState<HealthStatus | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isAskAIOpen, setIsAskAIOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -34,13 +32,9 @@ export default function AboutPage() {
     router.push(term ? `/library?search=${encodeURIComponent(term)}` : "/library");
   };
 
-  useEffect(() => {
-    checkBackendHealth().then(setHealth).catch(() => {});
-  }, []);
-
   return (
     <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex">
-      <Sidebar health={health} />
+      <Sidebar />
 
       <div className="flex-1 flex flex-col min-w-0">
         <Header

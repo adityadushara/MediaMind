@@ -6,8 +6,8 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import { AskLibraryModal } from "@/components/dashboard/AskLibraryModal";
 import { QuickUploadModal } from "@/components/dashboard/QuickUploadModal";
+import { describeDirectLink } from "@/lib/links";
 import {
-  checkBackendHealth,
   getLibraryItems,
   getLibraryItemDetail,
   updateLibraryItem,
@@ -26,7 +26,6 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { useAuth } from "@/context/AuthContext";
 import {
-  HealthStatus,
   LibraryItem,
   LibraryItemDetail,
   ContentType,
@@ -232,7 +231,6 @@ function MediaItemThumbnail({
 export default function LibraryPage() {
   const router = useRouter();
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [health, setHealth] = useState<HealthStatus | null>(null);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
@@ -412,16 +410,6 @@ export default function LibraryPage() {
     sortBy,
     sortOrder,
   ]);
-
-  useEffect(() => {
-    let isSubscribed = true;
-    checkBackendHealth().then((h) => {
-      if (isSubscribed) setHealth(h);
-    });
-    return () => {
-      isSubscribed = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -864,7 +852,7 @@ export default function LibraryPage() {
   return (
     <AuthGuard featureName="My Media Library">
       <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex">
-      <Sidebar health={health} onOpenUpload={() => setIsUploadOpen(true)} />
+      <Sidebar onOpenUpload={() => setIsUploadOpen(true)} />
 
       <div className="flex-1 flex flex-col min-w-0">
         <Header
@@ -1160,6 +1148,7 @@ export default function LibraryPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
               {items.map((item) => {
                 const badge = getTypeBadge(item.content_type);
+                const linkInfo = describeDirectLink(item.direct_url);
 
                 return (
                   <div
@@ -1251,7 +1240,7 @@ export default function LibraryPage() {
                           rel="noopener noreferrer"
                           className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition-all shadow-sm group/btn"
                         >
-                          <span>Open Direct Link</span>
+                          <span>{linkInfo.label}</span>
                           <ExternalLink className="h-3.5 w-3.5 group-hover/btn:translate-x-0.5 group-hover/btn:-translate-y-0.5 transition-transform" />
                         </a>
                       ) : (
@@ -1333,6 +1322,7 @@ export default function LibraryPage() {
             <div className="rounded-2xl border border-stone-200 bg-white divide-y divide-stone-100 overflow-hidden shadow-sm">
               {items.map((item) => {
                 const badge = getTypeBadge(item.content_type);
+                const linkInfo = describeDirectLink(item.direct_url);
 
                 return (
                   <div
@@ -1400,7 +1390,7 @@ export default function LibraryPage() {
                           rel="noopener noreferrer"
                           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold transition-colors"
                         >
-                          <span>Open Link</span>
+                          <span>{linkInfo.isSearch ? linkInfo.label : "Open Link"}</span>
                           <ExternalLink className="h-3 w-3" />
                         </a>
                       )}
@@ -1844,7 +1834,9 @@ export default function LibraryPage() {
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-sm shadow-sm transition-all"
               >
-                <span>Visit Direct Web Link</span>
+                <span>
+                  {describeDirectLink(selectedItemDetail.direct_url, "Visit Direct Web Link").label}
+                </span>
                 <ExternalLink className="h-4 w-4" />
               </a>
             )}

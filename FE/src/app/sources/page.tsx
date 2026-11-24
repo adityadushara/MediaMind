@@ -4,7 +4,6 @@ import React, { useEffect, useState, useCallback } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Header } from "@/components/layout/Header";
 import {
-  checkBackendHealth,
   getSourceAssets,
   getSourceAssetDetail,
   retryProcessingJob,
@@ -17,7 +16,6 @@ import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { useAuth } from "@/context/AuthContext";
 import {
-  HealthStatus,
   SourceAsset,
   SourceAssetDetail,
   JobStatus,
@@ -56,7 +54,6 @@ const SOURCES_SORT_OPTIONS: SelectOption[] = [
 
 export default function SourcesPage() {
   const { user, isLoading: isAuthLoading } = useAuth();
-  const [health, setHealth] = useState<HealthStatus | null>(null);
   const [assets, setAssets] = useState<SourceAsset[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
@@ -86,17 +83,29 @@ export default function SourcesPage() {
 
   const handleConfirmDeleteAsset = async () => {
     if (!deleteTarget) return;
+    const target = deleteTarget;
     setIsDeleting(true);
+
+    // Remove the row the moment the person confirms. Waiting for the request
+    // before updating the list made every delete look like a page reload.
+    setDeleteTarget(null);
+    setAssets((prev) => prev.filter((asset) => asset.id !== target.id));
+    setTotalCount((prev) => Math.max(0, prev - 1));
+    if (selectedAsset?.id === target.id) {
+      setSelectedAsset(null);
+    }
+
     try {
-      await deleteSourceAsset(deleteTarget.id);
-      if (selectedAsset?.id === deleteTarget.id) {
-        setSelectedAsset(null);
-      }
-      showToast(`'${deleteTarget.fileName}' was permanently deleted.`);
-      setDeleteTarget(null);
-      await loadSources();
+      await deleteSourceAsset(target.id);
+      showToast(`'${target.fileName}' was permanently deleted.`);
+      await loadSources({ silent: true });
     } catch (err) {
-      showToast("Failed to delete screenshot: " + (err instanceof Error ? err.message : String(err)), "error");
+      showToast(
+        "Failed to delete screenshot: " + (err instanceof Error ? err.message : String(err)),
+        "error"
+      );
+      // Put the list back in sync with the server after a failed delete.
+      await loadSources({ silent: true });
     } finally {
       setIsDeleting(false);
     }
@@ -125,16 +134,6 @@ export default function SourcesPage() {
     },
     [user, searchQuery, statusFilter, sortOrder, page]
   );
-
-  useEffect(() => {
-    let isSubscribed = true;
-    checkBackendHealth().then((h) => {
-      if (isSubscribed) setHealth(h);
-    });
-    return () => {
-      isSubscribed = false;
-    };
-  }, []);
 
   // A single fetch path: the previous duplicate effect fired two overlapping
   // requests for every filter change.
@@ -254,7 +253,7 @@ export default function SourcesPage() {
   return (
     <AuthGuard featureName="Saved Screenshots Vault">
       <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex">
-      <Sidebar health={health} />
+      <Sidebar />
 
       <div className="flex-1 flex flex-col min-w-0">
         <Header

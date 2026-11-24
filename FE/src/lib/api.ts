@@ -113,6 +113,29 @@ async function parseErrorDetail(res: Response, fallbackPrefix: string): Promise<
   return detail || `${fallbackPrefix} (${res.status} ${res.statusText})`;
 }
 
+/**
+ * Short-lived GET cache.
+ *
+ * Every page used to refetch library, jobs, stats and subcategories from
+ * scratch on each navigation, so moving between pages meant staring at
+ * spinners while four serverless round trips completed. Reads are now served
+ * from memory for a few seconds and refetched only when stale; mutations call
+ * `invalidateApiCache` so the next read is fresh.
+ */
+const GET_CACHE_TTL_MS = 20_000;
+const getCache = new Map<string, { at: number; data: unknown }>();
+const inflightGets = new Map<string, Promise<unknown>>();
+
+export function invalidateApiCache(prefix?: string): void {
+  if (!prefix) {
+    getCache.clear();
+    return;
+  }
+  for (const key of Array.from(getCache.keys())) {
+    if (key.startsWith(prefix)) getCache.delete(key);
+  }
+}
+
 async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   const url = `${API_BASE}${path}`;
   const authHeaders = await getAuthHeaders();
@@ -131,6 +154,28 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   }
 
   return res.json() as Promise<T>;
+}
+
+/** GET with a short cache and in-flight de-duplication. */
+async function fetchJsonCached<T>(path: string): Promise<T> {
+  const cached = getCache.get(path);
+  if (cached && Date.now() - cached.at < GET_CACHE_TTL_MS) {
+    return cached.data as T;
+  }
+  const pending = inflightGets.get(path);
+  if (pending) return pending as Promise<T>;
+
+  const request = fetchJson<T>(path)
+    .then((data) => {
+      getCache.set(path, { at: Date.now(), data });
+      return data;
+    })
+    .finally(() => {
+      inflightGets.delete(path);
+    });
+
+  inflightGets.set(path, request);
+  return request;
 }
 
 export async function checkBackendHealth(): Promise<HealthStatus> {
@@ -184,41 +229,49 @@ export async function getLibraryItems(params?: {
   if (params?.offset) searchParams.set("offset", params.offset.toString());
 
   const qs = searchParams.toString();
-  return fetchJson<LibraryItemListResponse>(`/api/v1/library${qs ? `?${qs}` : ""}`);
+  return fetchJsonCached<LibraryItemListResponse>(`/api/v1/library${qs ? `?${qs}` : ""}`);
 }
 
 export async function getLibraryStats(): Promise<LibraryStats> {
-  return fetchJson<LibraryStats>("/api/v1/library/stats");
+  return fetchJsonCached<LibraryStats>("/api/v1/library/stats");
 }
 
 export async function verifyLibraryItem(itemId: string): Promise<LibraryItem> {
-  return fetchJson<LibraryItem>(`/api/v1/library/${itemId}/verify`, {
+  const item = await fetchJson<LibraryItem>(`/api/v1/library/${itemId}/verify`, {
     method: "POST",
   });
+  invalidateApiCache();
+  return item;
 }
 
 export async function verifyAllLibraryItems(): Promise<{ verified_count: number }> {
-  return fetchJson<{ verified_count: number }>(`/api/v1/library/verify-all`, {
+  const result = await fetchJson<{ verified_count: number }>(`/api/v1/library/verify-all`, {
     method: "POST",
   });
+  invalidateApiCache();
+  return result;
 }
 
 export async function getSubcategories(contentType?: string): Promise<string[]> {
   const qs = contentType ? `?content_type=${encodeURIComponent(contentType)}` : "";
-  return fetchJson<string[]>(`/api/v1/library/subcategories${qs}`);
+  return fetchJsonCached<string[]>(`/api/v1/library/subcategories${qs}`);
 }
 
 export async function acceptAllJobCandidates(jobId: string): Promise<LibraryItem[]> {
-  return fetchJson<LibraryItem[]>(`/api/v1/reviews/jobs/${jobId}/accept-all`, {
+  const items = await fetchJson<LibraryItem[]>(`/api/v1/reviews/jobs/${jobId}/accept-all`, {
     method: "POST",
   });
+  invalidateApiCache();
+  return items;
 }
 
 export async function createLibraryItem(payload: Partial<LibraryItem>): Promise<LibraryItem> {
-  return fetchJson<LibraryItem>("/api/v1/library", {
+  const item = await fetchJson<LibraryItem>("/api/v1/library", {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  invalidateApiCache();
+  return item;
 }
 
 export async function getLibraryItemDetail(id: string): Promise<LibraryItemDetail> {
@@ -229,10 +282,12 @@ export async function updateLibraryItem(
   id: string,
   payload: Partial<LibraryItem>
 ): Promise<LibraryItem> {
-  return fetchJson<LibraryItem>(`/api/v1/library/${id}`, {
+  const item = await fetchJson<LibraryItem>(`/api/v1/library/${id}`, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
+  invalidateApiCache();
+  return item;
 }
 
 export async function deleteLibraryItem(id: string): Promise<void> {
@@ -244,17 +299,20 @@ export async function deleteLibraryItem(id: string): Promise<void> {
   if (!res.ok) {
     throw new Error(await parseErrorDetail(res, "Failed to delete item"));
   }
+  invalidateApiCache();
 }
 
 export async function retryProcessingJob(jobId: string): Promise<ProcessingJob> {
-  return fetchJson<ProcessingJob>(`/api/v1/jobs/${jobId}/retry`, {
+  const job = await fetchJson<ProcessingJob>(`/api/v1/jobs/${jobId}/retry`, {
     method: "POST",
   });
+  invalidateApiCache();
+  return job;
 }
 
 export async function getProcessingJobs(status?: string): Promise<ProcessingJob[]> {
   const qs = status ? `?status=${status}` : "";
-  return fetchJson<ProcessingJob[]>(`/api/v1/jobs${qs}`);
+  return fetchJsonCached<ProcessingJob[]>(`/api/v1/jobs${qs}`);
 }
 
 export async function getSourceAssets(params?: {
@@ -271,7 +329,7 @@ export async function getSourceAssets(params?: {
   if (params?.limit) searchParams.set("limit", params.limit.toString());
   if (params?.offset) searchParams.set("offset", params.offset.toString());
   const qs = searchParams.toString();
-  return fetchJson<SourceAssetListResponse>(`/api/v1/assets${qs ? `?${qs}` : ""}`);
+  return fetchJsonCached<SourceAssetListResponse>(`/api/v1/assets${qs ? `?${qs}` : ""}`);
 }
 
 export async function getSourceAssetDetail(assetId: string): Promise<SourceAssetDetail> {
@@ -279,18 +337,25 @@ export async function getSourceAssetDetail(assetId: string): Promise<SourceAsset
 }
 
 export async function deleteSourceAsset(assetId: string): Promise<{ success: boolean; message: string }> {
-  return fetchJson<{ success: boolean; message: string }>(`/api/v1/assets/${assetId}`, {
-    method: "DELETE",
-  });
+  const result = await fetchJson<{ success: boolean; message: string }>(
+    `/api/v1/assets/${assetId}`,
+    { method: "DELETE" }
+  );
+  invalidateApiCache();
+  return result;
 }
 
 export async function linkSourceToLibraryItem(
   itemId: string,
   assetId: string
 ): Promise<{ status: string; library_item_id: string; source_asset_id: string }> {
-  return fetchJson(`/api/v1/library/${itemId}/sources/${assetId}`, {
-    method: "POST",
-  });
+  const result = await fetchJson<{
+    status: string;
+    library_item_id: string;
+    source_asset_id: string;
+  }>(`/api/v1/library/${itemId}/sources/${assetId}`, { method: "POST" });
+  invalidateApiCache();
+  return result;
 }
 
 export async function unlinkSourceFromLibraryItem(
@@ -348,11 +413,12 @@ export async function uploadScreenshotFiles(
     throw new Error(await parseErrorDetail(res, "Upload failed"));
   }
 
+  invalidateApiCache();
   return res.json();
 }
 
 export async function getReviewCounts(): Promise<ReviewCounts> {
-  return fetchJson<ReviewCounts>("/api/v1/reviews/counts");
+  return fetchJsonCached<ReviewCounts>("/api/v1/reviews/counts");
 }
 
 export async function listReviewCandidates(params?: {
@@ -382,28 +448,35 @@ export async function updateReviewCandidate(
   id: string,
   payload: CandidateUpdateRequest
 ): Promise<IdentificationCandidate> {
-  return fetchJson<IdentificationCandidate>(`/api/v1/reviews/candidates/${id}`, {
-    method: "PATCH",
-    body: JSON.stringify(payload),
-  });
+  const candidate = await fetchJson<IdentificationCandidate>(
+    `/api/v1/reviews/candidates/${id}`,
+    { method: "PATCH", body: JSON.stringify(payload) }
+  );
+  invalidateApiCache();
+  return candidate;
 }
 
 export async function acceptReviewCandidate(
   id: string,
   payload: ReviewAcceptRequest
 ): Promise<LibraryItem> {
-  return fetchJson<LibraryItem>(`/api/v1/reviews/candidates/${id}/accept`, {
+  const item = await fetchJson<LibraryItem>(`/api/v1/reviews/candidates/${id}/accept`, {
     method: "POST",
     body: JSON.stringify(payload),
   });
+  invalidateApiCache();
+  return item;
 }
 
 export async function rejectReviewCandidate(
   id: string
 ): Promise<{ success: boolean; candidate_id: string; review_status: string }> {
-  return fetchJson(`/api/v1/reviews/candidates/${id}/reject`, {
-    method: "POST",
-  });
+  const result = await fetchJson<{ success: boolean; candidate_id: string; review_status: string }>(
+    `/api/v1/reviews/candidates/${id}/reject`,
+    { method: "POST" }
+  );
+  invalidateApiCache();
+  return result;
 }
 
 export async function askLibrary(request: RAGQueryRequest): Promise<RAGQueryResponse> {

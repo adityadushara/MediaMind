@@ -98,16 +98,7 @@ describe("Responsive Sidebar & Header mobile drawer", () => {
   it("opens and closes the mobile navigation drawer from Header menu button", () => {
     render(
       <div>
-        <Sidebar
-          health={{
-            status: "healthy",
-            version: "1.0.0",
-            environment: "test",
-            database: "connected",
-            storage: "connected",
-          }}
-          pendingReviewCount={2}
-        />
+        <Sidebar pendingReviewCount={2} />
         <Header searchQuery="" onSearchChange={vi.fn()} onOpenAskAI={vi.fn()} />
       </div>
     );

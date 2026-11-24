@@ -8,15 +8,14 @@ import { ProcessingStatusBanner } from "@/components/dashboard/ProcessingStatusB
 import { RecentActivity } from "@/components/dashboard/RecentActivity";
 import { QuickUploadModal } from "@/components/dashboard/QuickUploadModal";
 import { AskLibraryModal } from "@/components/dashboard/AskLibraryModal";
-import { checkBackendHealth, getLibraryItems, getLibraryStats, getProcessingJobs } from "@/lib/api";
-import { HealthStatus, LibraryItem, LibraryStats, ProcessingJob } from "@/types";
+import { getLibraryItems, getLibraryStats, getProcessingJobs } from "@/lib/api";
+import { LibraryItem, LibraryStats, ProcessingJob } from "@/types";
 import { RefreshCw, Loader2, UploadCloud } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { LandingPage } from "@/components/landing/LandingPage";
 
 export default function DashboardPage() {
   const { user, isLoading: isAuthLoading, openAuthModal } = useAuth();
-  const [health, setHealth] = useState<HealthStatus | null>(null);
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>([]);
   const [stats, setStats] = useState<LibraryStats | null>(null);
   const [jobs, setJobs] = useState<ProcessingJob[]>([]);
@@ -29,13 +28,11 @@ export default function DashboardPage() {
     if (!user) return;
     setIsLoading(true);
     try {
-      const [healthRes, itemsRes, jobsRes, statsRes] = await Promise.all([
-        checkBackendHealth(),
+      const [itemsRes, jobsRes, statsRes] = await Promise.all([
         getLibraryItems({ limit: 10 }),
         getProcessingJobs(),
         getLibraryStats().catch(() => null),
       ]);
-      setHealth(healthRes);
       setLibraryItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []);
       setJobs(Array.isArray(jobsRes) ? jobsRes : []);
       setStats(statsRes);
@@ -62,14 +59,12 @@ export default function DashboardPage() {
 
     async function initialFetch() {
       try {
-        const [healthRes, itemsRes, jobsRes, statsRes] = await Promise.all([
-          checkBackendHealth(),
+        const [itemsRes, jobsRes, statsRes] = await Promise.all([
           getLibraryItems({ limit: 10 }),
           getProcessingJobs(),
           getLibraryStats().catch(() => null),
         ]);
         if (isSubscribed) {
-          setHealth(healthRes);
           setLibraryItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []);
           setJobs(Array.isArray(jobsRes) ? jobsRes : []);
           setStats(statsRes);
@@ -167,7 +162,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#FBF9F5] text-stone-900 flex">
       {/* Sidebar */}
-      <Sidebar health={health} pendingReviewCount={pendingReviewCount} onOpenUpload={() => setIsUploadOpen(true)} />
+      <Sidebar pendingReviewCount={pendingReviewCount} onOpenUpload={() => setIsUploadOpen(true)} />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">

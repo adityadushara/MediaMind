@@ -8,20 +8,17 @@ import {
   Library,
   Image as ImageIcon,
   BookMarked,
-  Server,
   Info,
   LogOut,
   LogIn,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { HealthStatus } from "@/types";
 import { useAuth } from "@/context/AuthContext";
 
 export const OPEN_MOBILE_NAV_EVENT = "mediamind:open-mobile-nav";
 
 interface SidebarProps {
-  health: HealthStatus | null;
   pendingReviewCount?: number;
   onOpenUpload?: () => void;
   isMobileOpen?: boolean;
@@ -36,7 +33,6 @@ interface NavItem {
 }
 
 export function Sidebar({
-  health,
   pendingReviewCount = 0,
   isMobileOpen,
   onCloseMobile,
@@ -80,21 +76,6 @@ export function Sidebar({
     { label: "Saved Screenshots", href: "/sources", icon: ImageIcon },
     { label: "About MediaMind", href: "/about", icon: Info },
   ];
-
-  // `health` is null while the first probe is in flight. Reporting "Offline"
-  // then is a false alarm, so the status is explicitly "Checking…" until the
-  // probe answers.
-  const isChecking = health === null;
-  const healthStatus = health?.status ?? null;
-  const isHealthy = healthStatus === "healthy";
-  const isDegraded = healthStatus === "degraded";
-  const statusLabel = isChecking
-    ? "Checking…"
-    : isHealthy
-      ? "Ready"
-      : isDegraded
-        ? "Degraded"
-        : "Offline";
 
   const renderSidebarContent = (isDrawer: boolean) => (
     <>
@@ -159,43 +140,8 @@ export function Sidebar({
         </nav>
       </div>
 
-      {/* Footer / System Status */}
+      {/* Footer / User Account */}
       <div className="p-4 border-t border-stone-200/80 bg-white/40 space-y-3">
-        <div className="flex items-center justify-between text-xs px-3 py-2 rounded-lg bg-stone-100/80 border border-stone-200">
-          <div className="flex items-center gap-2 text-stone-600">
-            <Server className="h-3.5 w-3.5 text-stone-500" />
-            <span className="font-medium text-xs">AI Assistant</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                isChecking
-                  ? "bg-stone-400 animate-pulse"
-                  : isHealthy
-                    ? "bg-emerald-500"
-                    : isDegraded
-                      ? "bg-amber-500"
-                      : "bg-rose-500"
-              )}
-            />
-            <span
-              className={cn(
-                "text-xs font-semibold",
-                isChecking
-                  ? "text-stone-500"
-                  : isHealthy
-                    ? "text-emerald-700"
-                    : isDegraded
-                      ? "text-amber-700"
-                      : "text-rose-600"
-              )}
-            >
-              {statusLabel}
-            </span>
-          </div>
-        </div>
-
         {/* User Account / Auth Section */}
         {user ? (
           <div className="flex items-center justify-between gap-2 px-1 pt-1">

@@ -176,6 +176,10 @@ export function extractYouTubeVideoId(raw: unknown): string | null {
   return null;
 }
 
+export function openLibrarySearchUrl(title: string, creator?: string | null): string {
+  return `https://openlibrary.org/search?q=${encodeQuery(buildSearchQuery(title, creator))}`;
+}
+
 export function bookSearchUrl(title: string, creator?: string | null): string {
   return `https://www.google.com/search?tbm=bks&q=${encodeQuery(
     buildSearchQuery(title, creator)
@@ -266,7 +270,9 @@ export function providerSearchUrl(
     case "youtube_video":
       return youtubeSearchUrl(cleanTitle, creator);
     case "book":
-      return bookSearchUrl(cleanTitle, creator);
+      // Google Books search needs an API key for reliable quota; Open Library
+      // resolves the same query anonymously and lands on the work itself.
+      return openLibrarySearchUrl(cleanTitle, creator);
     case "movie":
     case "tv_show":
     case "documentary":
