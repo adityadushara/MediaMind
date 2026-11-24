@@ -24,23 +24,29 @@ export default function DashboardPage() {
   const [isAskAIOpen, setIsAskAIOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Each panel paints as soon as its own data arrives. Waiting for the slowest
+  // request (the job list, which does recovery work) held the counts back by
+  // two seconds for no reason.
   const refreshData = useCallback(async (options?: { silent?: boolean }) => {
     if (!user) return;
     if (!options?.silent) setIsLoading(true);
-    try {
-      const [itemsRes, jobsRes, statsRes] = await Promise.all([
-        getLibraryItems({ limit: 10 }),
-        getProcessingJobs(),
-        getLibraryStats().catch(() => null),
-      ]);
-      setLibraryItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []);
-      setJobs(Array.isArray(jobsRes) ? jobsRes : []);
-      setStats(statsRes);
-    } catch {
-      // Keep previous state
-    } finally {
-      if (!options?.silent) setIsLoading(false);
-    }
+
+    const itemsRequest = getLibraryItems({ limit: 10 })
+      .then((res) => {
+        setLibraryItems(Array.isArray(res?.items) ? res.items : []);
+      })
+      .catch(() => {});
+
+    const statsRequest = getLibraryStats()
+      .then((res) => setStats(res))
+      .catch(() => {});
+
+    const jobsRequest = getProcessingJobs()
+      .then((res) => setJobs(Array.isArray(res) ? res : []))
+      .catch(() => {});
+
+    await Promise.all([itemsRequest, statsRequest, jobsRequest]);
+    if (!options?.silent) setIsLoading(false);
   }, [user]);
 
   // Reads are served from cache and refreshed in the background, so the
@@ -66,34 +72,12 @@ export default function DashboardPage() {
       return;
     }
 
-    let isSubscribed = true;
-
-    async function initialFetch() {
-      try {
-        const [itemsRes, jobsRes, statsRes] = await Promise.all([
-          getLibraryItems({ limit: 10 }),
-          getProcessingJobs(),
-          getLibraryStats().catch(() => null),
-        ]);
-        if (isSubscribed) {
-          setLibraryItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []);
-          setJobs(Array.isArray(jobsRes) ? jobsRes : []);
-          setStats(statsRes);
-          setIsLoading(false);
-        }
-      } catch {
-        if (isSubscribed) {
-          setIsLoading(false);
-        }
-      }
+    async function loadDashboard() {
+      await refreshData();
     }
 
-    initialFetch();
-
-    return () => {
-      isSubscribed = false;
-    };
-  }, [user, isAuthLoading]);
+    loadDashboard();
+  }, [user, isAuthLoading, refreshData]);
 
   // While a job is queued/processing, refresh so the banner and library
   // reflect completion without a manual reload.
@@ -104,23 +88,12 @@ export default function DashboardPage() {
     );
     if (!hasActive) return;
 
-    const timer = setInterval(async () => {
-      try {
-        const [itemsRes, jobsRes, statsRes] = await Promise.all([
-          getLibraryItems({ limit: 10 }),
-          getProcessingJobs(),
-          getLibraryStats().catch(() => null),
-        ]);
-        setLibraryItems(Array.isArray(itemsRes?.items) ? itemsRes.items : []);
-        setJobs(Array.isArray(jobsRes) ? jobsRes : []);
-        setStats(statsRes);
-      } catch {
-        // Keep the previous state; the next tick retries.
-      }
+    const timer = setInterval(() => {
+      void refreshData({ silent: true });
     }, 8000);
 
     return () => clearInterval(timer);
-  }, [user, jobs]);
+  }, [user, jobs, refreshData]);
 
   // If session is initializing, show clean spinner
   if (isAuthLoading) {
