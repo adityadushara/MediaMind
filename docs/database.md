@@ -159,7 +159,7 @@ Stores vector embeddings for Enterprise RAG semantic search.
 - `library_item_id` (UUID, FK $\rightarrow$ `library_items.id` ON DELETE CASCADE)
 - `user_id` (UUID, FK $\rightarrow$ `auth.users.id` ON DELETE CASCADE)
 - `embedding_source` (VARCHAR(50)) — `metadata`, `note`, `overview`
-- `embedding` (VECTOR(768)) — 768-dim embeddings (e.g., text-embedding-004)
+- `embedding` (VECTOR(768)) — 768-dim embeddings (e.g., gemini-embedding-001)
 - `content_chunk` (TEXT NOT NULL)
 - `created_at` (TIMESTAMPTZ, default `NOW()`)
 - *Index*: `item_embeddings_vector_idx USING ivfflat (embedding vector_cosine_ops)`.
@@ -243,7 +243,7 @@ Records per-execution telemetry, token accounting, and latency for AI extraction
 | `source_asset_id` | `UUID` | Foreign Key $\rightarrow$ `source_assets.id` (ON DELETE CASCADE), Indexed |
 | `prompt_identifier` | `VARCHAR(100)` | Prompt task identifier (e.g. `gemini_multimodal_extraction`) |
 | `prompt_version` | `VARCHAR(50)` | Version of prompt used (e.g. `v1.0.0`) |
-| `ai_model_name` | `VARCHAR(100)` | Runtime model identifier (e.g. `gemini-2.5-flash`) |
+| `ai_model_name` | `VARCHAR(100)` | Runtime model identifier (e.g. `gemini-3.5-flash-lite`) |
 | `status` | `VARCHAR(50)` | Status: `completed`, `failed` |
 | `processing_duration_ms`| `INTEGER` | Total end-to-end model and processing latency |
 | `prompt_tokens` | `INTEGER` | Input token count |

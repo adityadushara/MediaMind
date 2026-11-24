@@ -237,7 +237,7 @@ class GeminiAdapter:
                 if is_daily_quota_exhausted:
                     error_msg = (
                         "Gemini API Free Tier daily limit exceeded (20 requests/day). "
-                        "To fix: switch GEMINI_RUNTIME_MODEL in BE/.env to 'gemini-2.0-flash' (higher free quota) "
+                        "To fix: switch GEMINI_RUNTIME_MODEL in BE/.env to 'gemini-3.5-flash-lite' (higher free quota) "
                         "or enable Pay-As-You-Go in Google AI Studio."
                     )
 

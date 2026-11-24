@@ -36,7 +36,7 @@ flowchart LR
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase Service Role Key | Service role secret from Supabase |
 | `SUPABASE_STORAGE_BUCKET` | Storage Bucket Name | `screenshots` |
 | `GEMINI_API_KEY` | Google Gemini API Key | From Google AI Studio |
-| `GEMINI_RUNTIME_MODEL` | Runtime Model ID | `gemini-2.5-flash` |
+| `GEMINI_RUNTIME_MODEL` | Runtime Model ID | `gemini-3.5-flash-lite` |
 | `TMDB_API_KEY` | TMDB API Key (Optional) | Movie/TV metadata lookup |
 | `YOUTUBE_API_KEY` | YouTube Data API Key (Optional) | YouTube video metadata lookup |
 
@@ -73,7 +73,7 @@ In the Railway service **Variables** tab, add:
 | `SUPABASE_JWT_SECRET` | Supabase JWT Secret | From Supabase Project Settings → API |
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres` |
 | `GEMINI_API_KEY` | Google Gemini API Key | From Google AI Studio |
-| `GEMINI_RUNTIME_MODEL` | Runtime Model ID | `gemini-2.5-flash` |
+| `GEMINI_RUNTIME_MODEL` | Runtime Model ID | `gemini-3.5-flash-lite` |
 | `BACKEND_CORS_ORIGINS` | Allowed frontend domains | `https://*.vercel.app,http://localhost:3000` |
 
 > [!NOTE]

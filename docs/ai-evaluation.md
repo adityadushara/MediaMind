@@ -76,16 +76,13 @@ pytest tests/test_eval.py -v
 ```
 
 ### 4.1. Official Google Gemini API Pricing Reference (Standard Tier, Prompts ≤ 200k tokens)
-- **Gemini 2.5 Flash (`gemini-2.5-flash`)**:
+- **Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`)** — current runtime default:
   - Input: **$0.30** / 1M tokens ($0.00000030/token)
-  - Output (including thinking tokens): **$2.50** / 1M tokens ($0.00000250/token)
-- **Gemini 2.0 Flash (`gemini-2.0-flash`)**:
-  - Input: **$0.15** / 1M tokens ($0.00000015/token)
-  - Output: **$0.60** / 1M tokens ($0.00000060/token)
-- **Gemini 1.5 Flash (`gemini-1.5-flash`)**:
-  - Input: **$0.075** / 1M tokens ($0.000000075/token)
-  - Output: **$0.30** / 1M tokens ($0.00000030/token)
+  - Output: **$2.50** / 1M tokens ($0.00000250/token)
+- **Gemini 3.5 Flash (`gemini-3.5-flash`)**, **Gemini 3.1 Flash Lite (`gemini-3.1-flash-lite`)**, **`gemini-flash-latest`** — fallback ladder, billed at the same rate below 200k tokens.
 - **Google AI Studio Free Tier**: **$0.00** (rate-limited for prototyping).
+
+Rates follow `GeminiAdapter._estimate_cost_usd`, which prices every 3.x flash model at the flash rate. A lite model is therefore costed conservatively at flash rates, and no measured 3.x pricing table is claimed here until it is verified against the billing console.
 
 ### 4.2. Evaluation Modes
 - **`fixture` Mode**: Runs against independent static predictions (`fixtures/static_predictions.json`) to verify metric computation, threshold logic, and pipeline regressions offline without live network dependencies.
